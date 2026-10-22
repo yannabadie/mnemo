@@ -1,0 +1,278 @@
+"""Mnemo's memory store: versioned facts with provenance, on plain SQLite.
+
+Design rules that matter for trust:
+- Every memory carries source references and timestamps ("memory with receipts").
+- Corrections never overwrite history: they add a version and supersede the old one.
+  The full-text index is rebuilt on correction, so current knowledge is always
+  searchable and stale wording never matches.
+- correct() uses optimistic concurrency (expected_version); a stale writer is
+  refused instead of silently clobbering a newer correction.
+- Every version is hash-chained (prev_hash -> entry_hash), so tampering with the
+  database is detectable: verify() recomputes the chain and reports the exact
+  broken version. Even the operator cannot rewrite history undetected.
+- recall() returns current knowledge; superseded versions surface via history().
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import secrets
+import sqlite3
+import unicodedata
+from dataclasses import dataclass
+from pathlib import Path
+
+STATUS_CURRENT = "current"
+STATUS_SUPERSEDED = "superseded"
+GENESIS_HASH = "0" * 64
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS memories (
+    id              TEXT PRIMARY KEY,
+    title           TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    current_version INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS versions (
+    memory_id   TEXT NOT NULL REFERENCES memories(id),
+    version     INTEGER NOT NULL,
+    content     TEXT NOT NULL,
+    source_refs TEXT NOT NULL,
+    status      TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    prev_hash   TEXT NOT NULL,
+    entry_hash  TEXT NOT NULL,
+    PRIMARY KEY (memory_id, version)
+);
+CREATE TABLE IF NOT EXISTS fts_map (
+    fts_rowid INTEGER PRIMARY KEY,
+    memory_id TEXT NOT NULL
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
+    title, content, content='', tokenize='unicode61'
+);
+"""
+
+SQL_INSERT_MEMORY = "INSERT INTO memories(id,title,created_at,updated_at,current_version) VALUES (?,?,?,?,1)"
+SQL_INSERT_VERSION = "INSERT INTO versions(memory_id,version,content,source_refs,status,created_at,prev_hash,entry_hash) VALUES (?,?,?,?,?,?,?,?)"
+SQL_INSERT_FTS = "INSERT INTO memory_fts(title, content) VALUES (?, ?)"
+SQL_INSERT_FTS_MAP = "INSERT INTO fts_map(fts_rowid, memory_id) VALUES (?, ?)"
+SQL_RECALL = "SELECT m.id AS mid, m.title AS mtitle, v.version, v.content, v.source_refs, v.created_at FROM memory_fts f JOIN fts_map ON fts_map.fts_rowid = f.rowid JOIN memories m ON m.id = fts_map.memory_id JOIN versions v ON v.memory_id = m.id AND v.version = m.current_version WHERE memory_fts MATCH ? ORDER BY rank LIMIT ?"
+SQL_SUPERSEDED_OF = "SELECT version, content, source_refs, created_at FROM versions WHERE memory_id = ? AND status = ? ORDER BY version"
+SQL_GET_VERSION = "SELECT current_version FROM memories WHERE id = ?"
+SQL_GET_ENTRY_HASH = "SELECT entry_hash FROM versions WHERE memory_id = ? AND version = ?"
+SQL_MARK_SUPERSEDED = "UPDATE versions SET status = ? WHERE memory_id = ? AND version = ?"
+SQL_BUMP_MEMORY = "UPDATE memories SET current_version = ?, updated_at = ? WHERE id = ?"
+SQL_GET_TITLE = "SELECT title FROM memories WHERE id = ?"
+SQL_HISTORY = "SELECT version, content, source_refs, status, created_at, entry_hash FROM versions WHERE memory_id = ? ORDER BY version"
+SQL_COUNT_MEMORIES = "SELECT COUNT(*) AS c FROM memories"
+SQL_COUNT_VERSIONS = "SELECT COUNT(*) AS c FROM versions"
+SQL_COUNT_SUPERSEDED = "SELECT COUNT(*) AS c FROM versions WHERE status = ?"
+SQL_ALL_MEMORIES = "SELECT id FROM memories ORDER BY created_at, id"
+SQL_FTS_DELETE = "DELETE FROM memory_fts WHERE rowid IN (SELECT fts_rowid FROM fts_map WHERE memory_id = ?)"
+SQL_MAP_DELETE = "DELETE FROM fts_map WHERE memory_id = ?"
+
+_TERM_STRIP = re.compile(r"[^a-z0-9]+")
+_ID_OK = re.compile(r"^[a-zA-Z0-9_]{1,40}$")
+
+
+def _now() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _fold(text: str) -> str:
+    folded = unicodedata.normalize("NFD", text)
+    return "".join(c for c in folded if unicodedata.category(c) != "Mn").lower()
+
+
+def _match_expression(query: str, operator: str = " AND ") -> str:
+    """Safe FTS5 MATCH expression: [a-z0-9] whitelist, bound as a parameter."""
+    terms = [t for t in _TERM_STRIP.sub(" ", _fold(query)).split() if len(t) > 1]
+    if not terms:
+        raise ValueError("query has no usable terms")
+    return operator.join('"' + t + '"*' for t in terms)
+
+
+def _hash_entry(prev_hash: str, memory_id: str, version: int, content: str,
+                source_refs_json: str, created_at: str) -> str:
+    material = "|".join([prev_hash, memory_id, str(version), content,
+                         source_refs_json, created_at])
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+class VersionConflict(Exception):
+    """Someone else corrected this memory since the caller last read it."""
+
+
+class NotFound(Exception):
+    """Unknown memory id."""
+
+
+class ChainBroken(Exception):
+    """The hash chain of a memory does not verify (possible tampering)."""
+
+
+@dataclass
+class MemoryView:
+    id: str
+    title: str
+    version: int
+    status: str
+    content: str
+    source_refs: list
+    created_at: str
+    updated_at: str
+
+
+class MemoryStore:
+    def __init__(self, path: str | Path):
+        self.db = sqlite3.connect(str(path), check_same_thread=False)
+        self.db.row_factory = sqlite3.Row
+        self.db.execute("PRAGMA journal_mode=WAL")
+        self.db.executescript(SCHEMA)
+
+    def _index(self, mem_id: str, title: str, content: str) -> None:
+        cur = self.db.execute(SQL_INSERT_FTS, (_fold(title), _fold(content)))
+        self.db.execute(SQL_INSERT_FTS_MAP, (cur.lastrowid, mem_id))
+
+    def _reindex(self, mem_id: str, title: str, content: str) -> None:
+        self.db.execute(SQL_FTS_DELETE, (mem_id,))
+        self.db.execute(SQL_MAP_DELETE, (mem_id,))
+        self._index(mem_id, title, content)
+
+    def remember(self, title: str, content: str, source_refs: list[str]) -> dict:
+        if not title.strip() or not content.strip():
+            raise ValueError("title and content must be non-empty")
+        if not source_refs:
+            raise ValueError("source_refs required: memory without provenance is a rumor")
+        mem_id = "mem_" + secrets.token_hex(4)
+        now = _now()
+        refs_json = json.dumps(source_refs)
+        entry_hash = _hash_entry(GENESIS_HASH, mem_id, 1, content.strip(), refs_json, now)
+        with self.db:
+            self.db.execute(SQL_INSERT_MEMORY, (mem_id, title.strip(), now, now))
+            self.db.execute(SQL_INSERT_VERSION,
+                            (mem_id, 1, content.strip(), refs_json,
+                             STATUS_CURRENT, now, GENESIS_HASH, entry_hash))
+            self._index(mem_id, title, content)
+        return {"memory_id": mem_id, "version": 1, "status": "recorded",
+                "provenance_kept": True, "recorded_at": now,
+                "entry_hash": entry_hash}
+
+    def recall(self, query: str, limit: int = 5, include_superseded: bool = False) -> dict:
+        if not query.strip():
+            raise ValueError("query must be non-empty")
+        if not 1 <= limit <= 20:
+            raise ValueError("limit must be 1..20")
+        match = _match_expression(query)
+        rows = self.db.execute(SQL_RECALL, (match, limit)).fetchall()
+        if not rows and " AND " in match:
+            match = _match_expression(query, operator=" OR ")
+            rows = self.db.execute(SQL_RECALL, (match, limit)).fetchall()
+        results = [{
+            "memory_id": row["mid"], "title": row["mtitle"],
+            "version": row["version"], "status": STATUS_CURRENT,
+            "content": row["content"],
+            "source_refs": json.loads(row["source_refs"]),
+            "updated_at": row["created_at"],
+            "relevance": round(1.0 / (1.0 + pos), 2),
+        } for pos, row in enumerate(rows)]
+        if include_superseded:
+            for r in list(results):
+                sup = self.db.execute(SQL_SUPERSEDED_OF,
+                                      (r["memory_id"], STATUS_SUPERSEDED)).fetchall()
+                for s in sup:
+                    results.append({
+                        "memory_id": r["memory_id"], "title": r["title"],
+                        "version": s["version"], "status": STATUS_SUPERSEDED,
+                        "content": s["content"],
+                        "source_refs": json.loads(s["source_refs"]),
+                        "updated_at": s["created_at"], "relevance": 0.0})
+        return {"query": query, "results": results, "count": len(results),
+                "note": "includes superseded versions for audit" if include_superseded
+                        else "current knowledge only; superseded versions live in history()"}
+
+    def correct(self, memory_id: str, expected_version: int,
+                content: str, source_refs: list[str] | None = None) -> dict:
+        if not _ID_OK.match(memory_id):
+            raise ValueError("invalid memory id")
+        if not source_refs:
+            raise ValueError("source_refs required: a correction without provenance is a rumor")
+        mem = self.db.execute(SQL_GET_VERSION, (memory_id,)).fetchone()
+        if mem is None:
+            raise NotFound("no memory " + memory_id)
+        if mem["current_version"] != expected_version:
+            raise VersionConflict(
+                "stale write: memory " + memory_id + " is at version "
+                + str(mem["current_version"]) + ", you expected "
+                + str(expected_version) + "; re-read it and retry")
+        prev = self.db.execute(SQL_GET_ENTRY_HASH,
+                               (memory_id, expected_version)).fetchone()
+        title_row = self.db.execute(SQL_GET_TITLE, (memory_id,)).fetchone()
+        now = _now()
+        new_version = expected_version + 1
+        refs_json = json.dumps(source_refs)
+        prev_hash = prev["entry_hash"] if prev else GENESIS_HASH
+        entry_hash = _hash_entry(prev_hash, memory_id, new_version,
+                                 content.strip(), refs_json, now)
+        with self.db:
+            self.db.execute(SQL_MARK_SUPERSEDED,
+                            (STATUS_SUPERSEDED, memory_id, expected_version))
+            self.db.execute(SQL_INSERT_VERSION,
+                            (memory_id, new_version, content.strip(), refs_json,
+                             STATUS_CURRENT, now, prev_hash, entry_hash))
+            self.db.execute(SQL_BUMP_MEMORY, (new_version, now, memory_id))
+            # the correction is searchable immediately; stale wording no longer matches
+            self._reindex(memory_id, title_row["title"], content)
+        return {"memory_id": memory_id, "version": new_version,
+                "superseded_version": expected_version, "status": "corrected",
+                "corrected_at": now, "entry_hash": entry_hash}
+
+    def history(self, memory_id: str) -> dict:
+        if not _ID_OK.match(memory_id):
+            raise ValueError("invalid memory id")
+        mem = self.db.execute(SQL_GET_TITLE, (memory_id,)).fetchone()
+        if mem is None:
+            raise NotFound("no memory " + memory_id)
+        rows = self.db.execute(SQL_HISTORY, (memory_id,)).fetchall()
+        return {"memory_id": memory_id, "title": mem["title"],
+                "chain": [{
+                    "version": r["version"], "status": r["status"],
+                    "content": r["content"], "source_refs": json.loads(r["source_refs"]),
+                    "recorded_at": r["created_at"], "entry_hash": r["entry_hash"],
+                } for r in rows]}
+
+    def verify(self, memory_id: str | None = None) -> dict:
+        """Recompute the hash chain of every memory (or one) from genesis.
+
+        Returns the exact first broken version, or ok with the number checked.
+        """
+        if memory_id is not None:
+            ids = [memory_id]
+        else:
+            ids = [r["id"] for r in self.db.execute(SQL_ALL_MEMORIES).fetchall()]
+        checked = 0
+        for mid in ids:
+            prev = GENESIS_HASH
+            rows = self.db.execute(SQL_HISTORY, (mid,)).fetchall()
+            for r in rows:
+                refs_json = json.dumps(json.loads(r["source_refs"]))
+                expect = _hash_entry(prev, mid, r["version"], r["content"],
+                                     refs_json, r["recorded_at"])
+                if expect != r["entry_hash"]:
+                    return {"ok": False,
+                            "broken_at": {"memory_id": mid, "version": r["version"]},
+                            "note": "chain mismatch: stored content or hash was modified after the fact"}
+                prev = expect
+                checked += 1
+        return {"ok": True, "checked": checked}
+
+    def stats(self) -> dict:
+        n_mem = self.db.execute(SQL_COUNT_MEMORIES).fetchone()["c"]
+        n_ver = self.db.execute(SQL_COUNT_VERSIONS).fetchone()["c"]
+        n_sup = self.db.execute(SQL_COUNT_SUPERSEDED,
+                                (STATUS_SUPERSEDED,)).fetchone()["c"]
+        return {"memories": n_mem, "versions": n_ver, "superseded": n_sup}

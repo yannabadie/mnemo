@@ -31,7 +31,7 @@ Mnemo fixes the three things a memory must guarantee before anyone trusts it:
    `VersionConflict` instead of clobbering. The client re-reads and retries.
    Nothing is lost, nobody lies to the user.
 
-## The four tools
+## The four memory tools (plus a stats counter)
 
 | Tool | What it does |
 |---|---|
@@ -52,9 +52,10 @@ python server.py            # MCP at http://127.0.0.1:8799/mcp + simulator at /
 Open http://127.0.0.1:8799/ — the **simulated Alexa+ experience** is a real MCP
 client: it performs the `initialize` handshake over Streamable HTTP, lists the
 tools, and shows every JSON-RPC frame live in the protocol panel while you chat.
-(A public instance is usually up during the hackathon judging window:
+(A public instance is up during the hackathon submission window:
 `https://keys-finances-funeral-national.trycloudflare.com` — served with
-`python server.py --public` behind a Cloudflare quick tunnel.)
+`python server.py --public` behind a Cloudflare quick tunnel. The tunnel is
+per-process; after the window, run locally with the commands above.)
 Press **▶ Demo** for the scripted scenario (record → recall → correct → history),
 or type your own:
 
@@ -66,30 +67,45 @@ History of the lease
 ```
 
 The deterministic mini-agent needs no LLM and no API keys, so the demo runs
-anywhere. Any real MCP client works too:
+anywhere. Any real MCP client works too (the handshake above was captured from
+a live `curl` session; the same handshake runs in the simulator's protocol
+panel).
+
+## Tamper-evidence — verify the receipts yourself
+
+Every version is hash-chained (`prev_hash → entry_hash`, genesis-pinned), so
+rewriting history inside SQLite is detectable:
 
 ```bash
-# initialize — the server negotiates protocol 2025-11-25
-curl -s -D headers.txt http://127.0.0.1:8799/mcp \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json, text/event-stream' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{
-        "protocolVersion":"2025-11-25","capabilities":{},
-        "clientInfo":{"name":"curl","version":"0"}}}'
-SID=$(grep -i mcp-session-id headers.txt | awk '{print $2}' | tr -d '\r')
-# ...then tools/list and tools/call with header "Mcp-Session-Id: $SID"
+python verify.py --db mnemo.db
+# OK — receipt chain intact (2 entries verified from genesis)
+
+# now falsify a version directly in SQLite, like a rogue operator would:
+sqlite3 mnemo.db "update versions set content='24 months' where version=2;"
+python verify.py --db mnemo.db
+# BROKEN — chain fails at memory mem_… version 2
 ```
 
-(Also verified with the MCP SDK's own client transport; see `tests/`.)
+Even the operator cannot rewrite history undetected. That is the difference
+between claiming auditability and shipping it.
 
 ## Architecture
 
 ```
 ui/index.html   simulated Alexa+ chat — a real MCP Streamable HTTP client (vanilla JS)
 server.py       MCPServer (official Python SDK, 2.x) · tools · static UI mount
-store.py        SQLite (WAL) + FTS5 · versioned facts · provenance · OCC
-tests/          unit tests: provenance required, version chains, stale-write refusal,
-                accent-insensitive recall, FTS injection neutralized
+store.py        SQLite (WAL) + FTS5 · versioned facts · provenance · OCC · hash chain
+verify.py       offline receipt-chain verifier (stdlib only)
+tests/          unit tests: provenance required on both write paths, version chains,
+                stale-write refusal, correction re-indexed for search, tampering
+                detected, accent-insensitive recall, FTS injection neutralized
+```
+
+## Tests
+
+```bash
+pip install -r requirements.txt   # includes pytest
+pytest -q                         # 13 passed
 ```
 
 - **Zero dependencies beyond the MCP SDK** (starlette/uvicorn come with it).

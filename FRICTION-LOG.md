@@ -25,10 +25,11 @@
 - **Workaround used**: `TransportSecuritySettings(enable_dns_rebinding_protection=False)` behind an explicit `--public` flag.
 - **Actionable suggestion**: document the tunnel scenario — every self-hosted demo behind a tunnel hits this.
 
-## Entry 4 — Devpost requirements unreachable for non-browser clients
-- **Task attempted**: fetch the hackathon page (tracks, requirements, dates) via plain HTTP for planning.
-- **Expected**: HTML.
-- **What actually happened**: 403 for non-browser clients; the page also gates registration behind a Cloudflare human check.
-- **Severity**: low.
-- **Workaround used**: full browser session.
-- **Actionable suggestion**: server-render a machine-readable mirror of key dates and submission requirements.
+## Entry 4 — No reference Alexa+ client to test an MCP server against
+- **Task attempted**: point a real Alexa+ client at our self-hosted MCP server to validate the integration end-to-end.
+- **Steps taken**: searched the track resources for a client/simulator; found SDK docs and sample code but no downloadable Alexa+ test client.
+- **Expected**: a harness or emulator to observe the handshake from the assistant's side.
+- **What actually happened**: no such client is publicly available during the hackathon, so we wrote our own simulated Alexa+ experience that is itself a real MCP Streamable HTTP client — which turned out to be the demo's best feature (the protocol panel shows live JSON-RPC).
+- **Severity**: medium.
+- **Workaround used**: the simulator (`ui/`), plus raw `curl`/SDK handshake transcripts.
+- **Actionable suggestion**: ship even a minimal "Alexa+ MCP client sandbox" for developers — testing server behavior against a genuine client is currently the biggest gap in the Alexa+ developer experience.
