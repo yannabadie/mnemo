@@ -52,6 +52,9 @@ python server.py            # MCP at http://127.0.0.1:8799/mcp + simulator at /
 Open http://127.0.0.1:8799/ — the **simulated Alexa+ experience** is a real MCP
 client: it performs the `initialize` handshake over Streamable HTTP, lists the
 tools, and shows every JSON-RPC frame live in the protocol panel while you chat.
+(A public instance is usually up during the hackathon judging window:
+`https://keys-finances-funeral-national.trycloudflare.com` — served with
+`python server.py --public` behind a Cloudflare quick tunnel.)
 Press **▶ Demo** for the scripted scenario (record → recall → correct → history),
 or type your own:
 

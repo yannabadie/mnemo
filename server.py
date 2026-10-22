@@ -75,9 +75,15 @@ def build_server(db_path: str) -> MCPServer:
     return mcp
 
 
-def build_app(db_path: str):
+def build_app(db_path: str, public: bool = False):
     mcp = build_server(db_path)
-    app = mcp.streamable_http_app(streamable_http_path="/mcp")
+    kwargs = {"streamable_http_path": "/mcp"}
+    if public:
+        # exposed through a reverse tunnel: accept the tunnel's host/origin
+        from mcp.server.transport_security import TransportSecuritySettings
+        kwargs["transport_security"] = TransportSecuritySettings(
+            enable_dns_rebinding_protection=False)
+    app = mcp.streamable_http_app(**kwargs)
     ui_dir = Path(__file__).parent / "ui"
     if ui_dir.is_dir():
         app.routes.append(
@@ -90,10 +96,12 @@ def main() -> None:
     parser.add_argument("--db", default=DEFAULT_DB, help="SQLite path")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8799)
+    parser.add_argument("--public", action="store_true",
+                        help="serve through a reverse tunnel (disables host checks)")
     args = parser.parse_args()
 
     import uvicorn
-    app = build_app(args.db)
+    app = build_app(args.db, public=args.public)
     uvicorn.run(app, host=args.host, port=args.port, lifespan="on")
 
 
