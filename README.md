@@ -4,6 +4,8 @@ Mnemo is a self-hosted MCP server and a browser simulator for the Alexa+ track o
 
 The design comes from a separate multi-agent memory system. This standalone project has its own SQLite store; a demonstration does not establish the correctness, safety, or completeness of that other system.
 
+[Watch the one-minute walkthrough](https://youtu.be/iNJlMGLmAwU): choose the lease, correct twenty-four months to eighteen, and inspect both versions. The video uses actual UI stills with English captions and synthetic narration. The application below lets you exercise the same interaction.
+
 ## Try it locally
 
 ```bash
@@ -79,6 +81,8 @@ The original suite and the added regression cases cover the problems found durin
 This is a hackathon prototype with a simulated assistant. Public demonstrations use synthetic data. Production accounts, household identity, consent scopes, authenticated document provenance and independent integrity anchoring require additional design and validation. These capabilities are not claimed by the demo.
 
 The submission must match the code and the actual recorded video. Eligibility for any additional mini challenge is determined by its rules and the organizers; an MIT license alone does not establish eligibility.
+
+Alongside Mnemo, [mcp-session-check](https://github.com/yannabadie/mcp-session-check) is a separate MIT utility for MCP HTTP discovery and session-lifecycle checks. It has no Mnemo dependency and invokes no application tool. Its public evidence separates simulated transport tests from a real local discovery/closure run.
 
 ## License and author
 
