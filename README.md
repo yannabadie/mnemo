@@ -1,140 +1,87 @@
-# Mnemo — Long-term memory for Alexa+ (MCP)
+# Mnemo — versioned memory for a simulated Alexa+ experience
 
-**Self-hosted MCP server (Streamable HTTP, spec 2025-11-25) that gives Alexa+ a
-memory you can trust: every fact keeps its provenance, every correction keeps
-its history, and stale corrections are refused instead of silently overwriting.**
+Mnemo is a self-hosted MCP server and a browser simulator for the Alexa+ track of the Amazon Developer Hackathon. It records facts with **declared sources**, keeps previous versions after a correction, and refuses stale writes. The simulator is a deterministic MCP client; it does not connect to Amazon Alexa or use an LLM.
 
-> *Memory with receipts.*
+The design comes from a separate multi-agent memory system. This standalone project has its own SQLite store; a demonstration does not establish the correctness, safety, or completeness of that other system.
 
-Built for the **Alexa+ track** of the Amazon Developer Hackathon
-(Build, Ship, Shape — Oct 2026). Also entering the **Open Source mini challenge**
-(this repo is a new MIT project created during the hackathon window).
-
----
-
-## Why
-
-Alexa+ and brand experiences built on it forget everything that matters:
-which version of a fact is current, where a fact came from, and who changed it.
-When memory IS retained, it is usually an opaque blob that gets silently
-overwritten — the user can't audit what the assistant "knows" about them.
-
-Mnemo fixes the three things a memory must guarantee before anyone trusts it:
-
-1. **Provenance** — a memory without a source is a rumor. `remember` refuses to
-   record anything without `source_refs`, and every recalled fact answers
-   *"how do you know that?"*.
-2. **History, not overwriting** — corrections create a new version and mark the
-   old one `superseded`. The full chain stays queryable forever (`history`).
-3. **Optimistic concurrency** — `correct` requires the version you last read.
-   If another skill corrected the memory since, the write is refused with a
-   `VersionConflict` instead of clobbering. The client re-reads and retries.
-   Nothing is lost, nobody lies to the user.
-
-## The four memory tools (plus a stats counter)
-
-| Tool | What it does |
-|---|---|
-| `remember(title, content, source_refs)` | Record a fact with receipts. Returns `memory_id`, version 1. |
-| `recall(query, limit, include_superseded)` | Accent-insensitive full-text recall of **current** knowledge; optional audit mode includes superseded versions. |
-| `correct(memory_id, expected_version, content, source_refs)` | Versioned correction. Old version becomes `superseded`. Stale writes refused. |
-| `history(memory_id)` | The complete version chain with sources and timestamps. |
-| `stats()` | Counters (memories, versions, superseded). |
-
-## Quick start
+## Try it locally
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv
+. .venv/bin/activate
 pip install -r requirements.txt
-python server.py            # MCP at http://127.0.0.1:8799/mcp + simulator at /
+python server.py --demo
 ```
 
-Open http://127.0.0.1:8799/ — the **simulated Alexa+ experience** is a real MCP
-client: it performs the `initialize` handshake over Streamable HTTP, lists the
-tools, and shows every JSON-RPC frame live in the protocol panel while you chat.
-(A public instance is up during the hackathon submission window:
-`https://keys-finances-funeral-national.trycloudflare.com` — served with
-`python server.py --public` behind a Cloudflare quick tunnel. The tunnel is
-per-process; after the window, run locally with the commands above.)
-Press **▶ Demo** for the scripted scenario (record → recall → correct → history),
-or type your own:
+Open http://127.0.0.1:8799/ and choose the synthetic demonstration. No model key or paid inference is needed. Package installation needs network access the first time.
 
-```
-Remember that my apartment lease with Marignier Properties is 24 months
-What about my lease?
-Actually, the lease is 18 months — I misread the contract
-History of the lease
-```
+### Storage modes
 
-The deterministic mini-agent needs no LLM and no API keys, so the demo runs
-anywhere. Any real MCP client works too (the handshake above was captured from
-a live `curl` session; the same handshake runs in the simulator's protocol
-panel).
+- **Local durable mode:** `python server.py --db mnemo.db` binds to loopback by default. The local store persists after reconnecting and restarting. It is a trusted local development service, not a multi-user authentication system. The browser must make its storage mode clear and must not overwrite a durable store with the sample scenario.
+- **Isolated demonstration:** `python server.py --demo` uses a separate temporary store for each MCP session. A new demo begins empty; this temporary mode is for synthetic examples.
+- **Public demonstration:** `python server.py --public --public-origin https://YOUR-EXACT-DEMO-HOST` requires the exact HTTPS origin. Host and Origin validation remain enabled. Public sessions are isolated temporary demonstrations, not storage for personal data. Start the tunnel separately and keep the configured origin aligned with the actual host.
 
-## Tamper-evidence — verify the receipts yourself
+The quick tunnel used during submission is temporary. The repository, video and local commands are the reproducible fallback. No future uptime is promised.
 
-Every version is hash-chained (`prev_hash → entry_hash`, genesis-pinned), so
-rewriting history inside SQLite is detectable:
+## Tools
+
+| Tool | Result |
+|---|---|
+| `remember(title, content, source_refs)` | Record a non-empty fact and non-empty declared references; return its ID and first version. |
+| `recall(query, limit, include_superseded)` | Search current facts using meaningful terms; an unrelated topic must not be substituted just because a common word matches. |
+| `list_memories(limit, offset, include_superseded)` | Enumerate real pages of memories without using a hard-coded list of search words. |
+| `correct(memory_id, expected_version, content, source_refs)` | Correct the explicitly identified memory at the expected version, preserving its history. |
+| `history(memory_id)` | Read versions, declared references, status and timestamps. |
+| `stats()` | Read counters for the current store. |
+
+A reference is a declaration from the caller. Requiring it does **not** verify a contract, an email, the caller's identity, or the truth of the fact. The browser's user/date marker is not an authenticated documentary receipt.
+
+## Correcting the intended memory
+
+The browser identifies the memory before writing a correction. An ambiguous request needs an explicit choice rather than silently selecting the first search result. A stale version is an observable conflict; re-reading is not permission to overwrite a different fact or to claim that the user confirmed it.
+
+The memory panel uses the listing tool. Recalled content is displayed as text, including text that looks like HTML. Microphone or speech features, when available, use the browser and its permissions; they are optional and do not imply a connection to an Amazon device.
+
+## Local receipt consistency
 
 ```bash
 python verify.py --db mnemo.db
-# OK — receipt chain intact (2 entries verified from genesis)
-
-# now falsify a version directly in SQLite, like a rogue operator would:
-sqlite3 mnemo.db "update versions set content='24 months' where version=2;"
-python verify.py --db mnemo.db
-# BROKEN — chain fails at memory mem_… version 2
 ```
 
-Even the operator cannot rewrite history undetected. That is the difference
-between claiming auditability and shipping it.
+Mnemo checks local receipt consistency: contiguous versions, previous-hash links, content and declared sources, immutable memory metadata, version statuses and the stored head commitment. It detects inconsistent edits and detectable truncation against those stored values.
+
+It is **not an external trust anchor**: an operator who rewrites the database and all hashes can create another consistent history. A locally consistent chain does not prove that the recorded statement is true or that its source is authentic. An unknown memory must not be reported as a successfully checked history.
+
+The verifier reads the database without migrating it. Legacy migrations establish a new integrity baseline; they do not authenticate past facts or their sources. Preserve a backup before upgrading a valuable store. Schema compatibility and failure rollback are tested with temporary fixtures, not the public demo's data.
 
 ## Architecture
 
+```text
+ui/index.html   deterministic simulated Alexa+ client and visible MCP protocol panel
+server.py       official Python MCP SDK, Streamable HTTP, storage-mode and origin controls
+store.py        SQLite + FTS5, versioned corrections, validation, migration and transactions
+verify.py       read-only local consistency verifier
+tests/          targeted storage, migration, interface and transport regressions
 ```
-ui/index.html   simulated Alexa+ chat — a real MCP Streamable HTTP client (vanilla JS)
-server.py       MCPServer (official Python SDK, 2.x) · tools · static UI mount
-store.py        SQLite (WAL) + FTS5 · versioned facts · provenance · OCC · hash chain
-verify.py       offline receipt-chain verifier (stdlib only)
-tests/          unit tests: provenance required on both write paths, version chains,
-                stale-write refusal, correction re-indexed for search, tampering
-                detected, accent-insensitive recall, FTS injection neutralized
-```
+
+The client negotiates MCP, keeps its session and sends the negotiated protocol version on subsequent requests. This is an MCP demonstration, not a claim of a fully deployed Amazon Alexa integration.
 
 ## Tests
 
 ```bash
-pip install -r requirements.txt   # includes pytest
-pytest -q                         # 13 passed
+pytest -q
 ```
 
-- **Zero dependencies beyond the MCP SDK** (starlette/uvicorn come with it).
-  Storage is plain SQLite — trivially self-hostable, no services to run.
-- The full-text index folds accents, so French and English recall match either
-  way; strict-AND matching falls back to OR for conversational queries
-  ("what about my lease").
-- The store layer has no network surface at all; the MCP layer adds no storage
-  logic. FTS MATCH expressions are built from a `[a-z0-9]` whitelist only and
-  are passed as bound parameters.
+The original suite and the added regression cases cover the problems found during independent review: wrong-topic recall and correction, invalid sources and empty content, index failure rollback, legacy migration, inconsistent history, real inventory, safe text display, isolated public sessions and transport rules. Test receipts identify exactly which checks were executed on each delivered version; a passing unit suite alone does not establish a successful public jury journey.
 
-## Use cases on Alexa+
+## Scope and next steps
 
-- **Personal knowledge**: "what did I decide about the lease?", "who is my
-  dentist?" — answers carry their source and date.
-- **Shared household memory**: two skills correcting the same fact can't
-  clobber each other; the second writer is told to re-read.
-- **Brand experiences**: a brand skill can publish curated facts (opening
-  hours, policies) with provenance, and correct them publicly, keeping the
-  audit trail customers can inspect.
-- **Compliance posture**: memories are inspectable, correctable and never
-  silently rewritten — the substrate a privacy story can be built on.
+This is a hackathon prototype with a simulated assistant. Public demonstrations use synthetic data. Production accounts, household identity, consent scopes, authenticated document provenance and independent integrity anchoring require additional design and validation. These capabilities are not claimed by the demo.
 
-## License
+The submission must match the code and the actual recorded video. Eligibility for any additional mini challenge is determined by its rules and the organizers; an MIT license alone does not establish eligibility.
+
+## License and author
 
 MIT — see [LICENSE](LICENSE).
 
-## Author
-
-Yann Abadie — built during the Amazon Developer Hackathon (Oct 2026).
-The design is distilled from a production multi-agent memory system
-(195+ versioned records in daily use), rewritten standalone for this hackathon.
+Yann Abadie. Built during the Amazon Developer Hackathon, October 2026.

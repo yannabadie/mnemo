@@ -9,11 +9,13 @@ from store import MemoryStore, VersionConflict, NotFound  # noqa: E402
 
 class StoreTest(unittest.TestCase):
     def setUp(self):
-        self.path = tempfile.mktemp(suffix=".db")
+        self.tmp = tempfile.TemporaryDirectory(prefix="mnemo-store-test-")
+        self.path = os.path.join(self.tmp.name, "memory.db")
         self.s = MemoryStore(self.path)
 
     def tearDown(self):
-        os.remove(self.path)
+        self.s.close()
+        self.tmp.cleanup()
 
     def test_remember_requires_provenance(self):
         with self.assertRaises(ValueError):

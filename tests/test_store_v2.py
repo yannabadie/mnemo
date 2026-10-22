@@ -9,11 +9,13 @@ from store import MemoryStore, VersionConflict  # noqa: E402
 
 class StoreV2Test(unittest.TestCase):
     def setUp(self):
-        self.path = tempfile.mktemp(suffix=".db")
+        self.tmp = tempfile.TemporaryDirectory(prefix="mnemo-v2-test-")
+        self.path = os.path.join(self.tmp.name, "memory.db")
         self.s = MemoryStore(self.path)
 
     def tearDown(self):
-        os.remove(self.path)
+        self.s.close()
+        self.tmp.cleanup()
 
     def test_correction_is_searchable_immediately(self):
         m = self.s.remember("Lease", "24 months, ending March 2028.",

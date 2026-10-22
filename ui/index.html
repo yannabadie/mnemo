@@ -35,7 +35,14 @@
   button{cursor:pointer;border:none;border-radius:10px;font-weight:600;font-size:13px;padding:10px 16px}
   #send{background:var(--cyan2);color:#001522}
   #demo{background:#153024;color:var(--ok);margin-right:0}
-  #mic{background:#1a2340;color:#9db4ff}
+  #voice,#new-session{background:#1a2340;color:#9db4ff}
+  button:disabled{opacity:.45;cursor:default}
+  .choices{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .choice,.edit-memory{background:#123a4d;color:var(--cyan);font-size:11px;padding:6px 9px;margin-top:5px}
+  .error{color:var(--err)}
+  #pager{display:flex;align-items:center;justify-content:space-between;gap:5px;padding:6px 10px;font-size:11px}
+  #pager button{background:#153044;color:var(--cyan);padding:5px 9px}
+  @media(max-width:850px){main{grid-template-columns:1fr}#side{max-height:40vh}#composer{flex-wrap:wrap}#composer input{min-width:180px}.msg{max-width:95%}}
   /* right */
   #side{display:flex;flex-direction:column;min-height:0;background:var(--panel2)}
   #side h2{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);padding:10px 14px;border-bottom:1px solid var(--line)}
@@ -72,18 +79,20 @@
   <section id="chat">
     <div id="log"></div>
     <div id="composer">
-      <button id="demo" title="Play the scripted demo scenario">▶ Demo</button>
-      <button id="mic" title="Voice input (Chrome)">🎙</button>
-      <input id="inp" placeholder="e.g. “Remember that my lease is 24 months” / “What about my lease?” / “Actually, it's 18 months”" autocomplete="off">
+      <button id="demo" title="Start a fresh session with made-up data">▶ Synthetic demo</button>
+      <button id="voice" aria-pressed="false" title="Optional local browser response">🔈 Voice off</button>
+      <button id="new-session" title="End only this demo session and start an empty one">New demo</button>
+      <input id="inp" placeholder="e.g. “Remember that my lease is 24 months” / “What about my lease?” / “Actually, it's 18 months”" autocomplete="off" maxlength="1200" aria-label="Message to the Mnemo simulator">
       <button id="send">Send</button>
     </div>
-    <div class="hint">Deterministic local agent (no LLM, no keys): “remember …” records · questions recall · “actually/correction …” corrects with version check · “history of …” audits.</div>
+    <div class="hint">Synthetic session only · deterministic, no LLM or keys · “remember …” adds a declared source · corrections require your choice · refresh starts a new session · optional installed local English voice.</div>
   </section>
   <aside id="side">
     <h2>MCP protocol — live</h2>
     <div id="proto"></div>
     <h2>Memory — versioned</h2>
     <div id="mems"><div class="mem"><div class="c">Empty. Ask Alexa to remember something, or run the demo.</div></div></div>
+    <div id="pager"><button id="prev-page" disabled>Previous</button><span id="page-label">0 memories</span><button id="next-page" data-offset="" disabled>Next</button></div>
     <div id="status">connecting…</div>
   </aside>
 </main>
@@ -91,187 +100,410 @@
 "use strict";
 const $ = id => document.getElementById(id);
 const log = $("log"), proto = $("proto"), memsBox = $("mems"), ring = $("ring");
-let session = null, protocol = null, nextId = 1;
-const seen = new Map();      // memory_id -> last version seen by the "agent"
+let session = null, protocol = null, nextId = 1, busy = false;
+let storageMode = null;
+let memoryOffset = 0, pendingAction = null, lastCreatedMemory = null;
+let choiceSequence = 0, voiceOn = false;
+const pageSize = 20, choiceTargets = new Map(), inventory = new Map();
 
-function addMsg(cls, html){ const d = document.createElement("div"); d.className = "msg " + cls; d.innerHTML = html; log.appendChild(d); log.scrollTop = log.scrollHeight; return d; }
-function frame(kind, label, data){ const d = document.createElement("div"); d.className = "frame " + kind; d.innerHTML = "<b>" + label + "</b>" + escapeHtml(typeof data === "string" ? data : JSON.stringify(data)); proto.appendChild(d); proto.scrollTop = proto.scrollHeight; }
-function escapeHtml(s){ return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-
-/* ---- real MCP client (Streamable HTTP) ---- */
-async function rpc(method, params, isNotification = false){
-  const body = isNotification
-    ? { jsonrpc:"2.0", method }
-    : { jsonrpc:"2.0", id: nextId++, method, params: params || {} };
-  frame("req", "→ " + method + (isNotification ? " (notification)" : ""), body);
-  ring.classList.add("thinking");
-  try{
-    const headers = { "Content-Type":"application/json", "Accept":"application/json, text/event-stream" };
-    if (session) headers["Mcp-Session-Id"] = session;
-    const resp = await fetch("/mcp", { method:"POST", headers, body: JSON.stringify(body) });
-    if (!session && resp.headers.get("Mcp-Session-Id")) session = resp.headers.get("Mcp-Session-Id");
-    const ct = (resp.headers.get("Content-Type") || "");
-    let msg = null;
-    if (ct.includes("event-stream")){
-      const text = await resp.text();
-      for (const line of text.split("\n")){
-        if (!line.startsWith("data:")) continue;
-        try{ const m = JSON.parse(line.slice(5).trim());
-             if (m.id === body.id || (!isNotification && m.result !== undefined && m.method === undefined && m.id !== undefined && m.id === body.id)) msg = m;
-             if (m.id === body.id) msg = m; }catch(e){}
-      }
-    } else if (ct.includes("application/json")){
-      msg = await resp.json();
-    }
-    if (resp.status === 202){ frame("res", "← 202 Accepted", ""); ring.classList.remove("thinking"); return null; }
-    frame(msg && msg.error ? "err" : "res", "← " + method, msg || ("HTTP " + resp.status));
-    if (msg && msg.error) throw new Error(msg.error.message || JSON.stringify(msg.error));
-    return msg ? msg.result : null;
-  } finally { ring.classList.remove("thinking"); }
+function escapeHtml(value){
+  return String(value ?? "").replace(/[&<>"']/g,
+    c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+}
+function addMsg(cls, safeHtml){
+  const d = document.createElement("div");
+  d.className = "msg " + cls;
+  d.innerHTML = safeHtml;
+  log.appendChild(d); log.scrollTop = log.scrollHeight;
+  return d;
+}
+function frame(kind, label, data){
+  const d = document.createElement("div"), title = document.createElement("b");
+  d.className = "frame " + kind; title.textContent = label;
+  d.appendChild(title);
+  d.appendChild(document.createTextNode(typeof data === "string" ? data : JSON.stringify(data)));
+  proto.appendChild(d); proto.scrollTop = proto.scrollHeight;
+}
+function clearChoices(){
+  pendingAction = null;
+  choiceTargets.clear();
+}
+function choiceHtml(row, action, label){
+  const token = String(++choiceSequence);
+  choiceTargets.set(token, {row, action});
+  return "<button class='choice' data-choice-token='" + token + "'>" +
+    escapeHtml(label || row.title) + " · v" + escapeHtml(row.version) + "</button>";
+}
+function choicesHtml(rows, action){
+  return "<div class='choices'>" + rows.map(r => choiceHtml(r, action)).join("") + "</div>";
+}
+function memoryTitle(content){
+  // A stable topic label avoids retaining an old amount/date in new titles.
+  // This is a lexical convenience, not semantic subject identification.
+  const topic = content.split(/\s+(?:is|are|was|were|expires?|est|sont|expire)\b/i)[0]
+    .split(/[:–,]/)[0].trim();
+  return (topic || content).slice(0, 64);
 }
 
-async function connect(){
-  const init = await rpc("initialize", {
-    protocolVersion: "2025-11-25",
-    capabilities: {},
-    clientInfo: { name: "mnemo-simulator", version: "1.0.0" }
+/* The negotiated version and session capability accompany every later request. */
+function rpcHeaders(){
+  const headers = {"Content-Type":"application/json", "Accept":"application/json, text/event-stream"};
+  if (session) headers["Mcp-Session-Id"] = session;
+  if (protocol) headers["MCP-Protocol-Version"] = protocol;
+  return headers;
+}
+function parseSse(text, requestId){
+  let result = null;
+  for (const event of text.replace(/\r\n/g, "\n").split("\n\n")){
+    const data = event.split("\n").filter(line => line.startsWith("data:"))
+      .map(line => line.slice(5).trimStart()).join("\n");
+    if (!data) continue;
+    try{
+      const message = JSON.parse(data);
+      if (message.id === requestId) result = message;
+    }catch(_){}
+  }
+  return result;
+}
+async function rpc(method, params, isNotification = false){
+  const body = isNotification ? {jsonrpc:"2.0", method} :
+    {jsonrpc:"2.0", id:nextId++, method, params:params || {}};
+  frame("req", "→ " + method, body);
+  const resp = await fetch("/mcp", {
+    method:"POST", headers:rpcHeaders(), body:JSON.stringify(body),
+    credentials:"omit"
   });
-  protocol = init && init.protocolVersion;
-  $("proto-badge").textContent = "MCP " + (protocol || "?");
+  const text = await resp.text(), ct = resp.headers.get("Content-Type") || "";
+  let message = null;
+  if (ct.includes("text/event-stream")) message = parseSse(text, body.id);
+  else if (ct.includes("application/json") && text){
+    try{ message = JSON.parse(text); }catch(_){}
+  }
+  if (!resp.ok){
+    const detail = message?.error?.message ||
+      (resp.status === 404 ? "Session ended. Start a new demo; this request was not retried." :
+       "HTTP " + resp.status + ": " + text.slice(0, 200));
+    frame("err", "← " + method, detail);
+    throw new Error(detail);
+  }
+  if (resp.status === 202 && isNotification){
+    frame("res", "← 202 Accepted", "");
+    return null;
+  }
+  if (!message || message.id !== body.id)
+    throw new Error("The server did not return a matching MCP response.");
+  if (message.error){
+    frame("err", "← " + method, message.error);
+    throw new Error(message.error.message || "MCP request failed.");
+  }
+  if (method === "initialize"){
+    session = resp.headers.get("Mcp-Session-Id");
+    protocol = message.result?.protocolVersion;
+    if (!session || !protocol) throw new Error("The server did not establish an isolated MCP session.");
+  }
+  frame("res", "← " + method, message);
+  return message.result;
+}
+async function callTool(name, args){
+  const res = await rpc("tools/call", {name, arguments:args});
+  if (!res) throw new Error("No tool result.");
+  const text = (res.content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
+  if (res.isError) throw new Error(text || "Tool failed.");
+  if (res.structuredContent) return res.structuredContent;
+  try{ return JSON.parse(text); }catch(_){ throw new Error("Unexpected tool response."); }
+}
+async function connect(){
+  const infoResponse = await fetch("/session-info", {credentials:"omit", cache:"no-store"});
+  if (!infoResponse.ok) throw new Error("Could not read the storage mode.");
+  const info = await infoResponse.json();
+  storageMode = info.storage;
+  if (!["temporary_demo", "local_durable"].includes(storageMode))
+    throw new Error("Unknown storage mode.");
+  $("new-session").textContent = storageMode === "local_durable" ? "Reconnect" : "New demo";
+  $("demo").title = storageMode === "local_durable" ?
+    "Synthetic scenarios require starting the server in --demo mode; this durable store will not be changed by the script." :
+    "Start a fresh isolated session with synthetic data";
+  const init = await rpc("initialize", {
+    protocolVersion:"2025-11-25", capabilities:{},
+    clientInfo:{name:"mnemo-simulator", version:"1.1.0"}
+  });
+  $("proto-badge").textContent = "MCP " + protocol;
   await rpc("notifications/initialized", null, true);
   const tools = await rpc("tools/list", {});
-  const names = tools.tools.map(t => t.name).join(", ");
-  $("status").textContent = "connected · server: " + (init.serverInfo.name + " " + (init.serverInfo.version || "")) + " · tools: " + names;
+  if (!(tools.tools || []).some(t => t.name === "list_memories"))
+    throw new Error("This interface needs the updated server with list_memories.");
+  $("status").textContent = "Connected · " + init.serverInfo.name +
+    (storageMode === "local_durable" ? " · local durable storage · reconnect keeps memories" :
+     " · isolated temporary demo · expires after 30 minutes idle or server stop");
   $("status").className = "on";
-  addMsg("alexa", "Hi! I'm Alexa with <b>Mnemo</b> long-term memory. Everything I store carries <i>provenance</i>, and corrections keep their history. Try me, or press <b>▶ Demo</b>.");
+}
+async function newSession(announce = true){
+  if (session){
+    const response = await fetch("/mcp", {
+      method:"DELETE", headers:rpcHeaders(), credentials:"omit"
+    });
+    if (!response.ok && response.status !== 404)
+      throw new Error("Could not end this session. No new session was started.");
+  }
+  session = null; protocol = null; memoryOffset = 0;
+  clearChoices(); inventory.clear(); lastCreatedMemory = null;
+  memsBox.innerHTML = ""; log.innerHTML = ""; proto.innerHTML = "";
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+  await connect(); await refreshMemories();
+  if (announce) addMsg("alexa", storageMode === "local_durable" ?
+    "Reconnected to the local durable store. Existing memories are preserved." :
+    "New isolated demo session. Previous session memories are not carried over. Use synthetic examples only.");
 }
 
-/* ---- tool helpers ---- */
-async function callTool(name, args){
-  const res = await rpc("tools/call", { name, arguments: args });
-  const text = (res.content || []).map(c => c.text).join("\n");
-  let data = null; try{ data = JSON.parse(text); }catch(e){}
-  if (res.isError) throw new Error(text);
-  return data !== null ? data : text;
-}
-
-/* ---- memory panel ---- */
+/* A real inventory: pages count memories, not a fixed set of search words. */
 async function refreshMemories(){
-  const st = await callTool("stats", {});
-  if (!st.memories){ memsBox.innerHTML = ""; return; }
-  const res = await callTool("recall", { query: "a e i o u lease dentist passport car insurance doctor bank wifi energy book trip project idea", limit: 20, include_superseded: true });
-  memsBox.innerHTML = "";
-  const byId = new Map();
-  for (const r of res.results){
-    if (!byId.has(r.memory_id)) byId.set(r.memory_id, { title: r.title, versions: [] });
-    byId.get(r.memory_id).versions.push(r);
+  const page = await callTool("list_memories", {
+    limit:pageSize, offset:memoryOffset, include_superseded:true
+  });
+  inventory.clear(); memsBox.innerHTML = "";
+  for (const row of page.results){
+    if (row.status !== "superseded") inventory.set(row.memory_id, row);
+    const d = document.createElement("div");
+    d.className = "mem" + (row.status === "superseded" ? " superseded" : "");
+    d.innerHTML = "<div class='t'>" + escapeHtml(row.title) +
+      " <span class='ver" + (row.status === "superseded" ? " sup" : "") + "'>v" +
+      escapeHtml(row.version) + (row.status === "superseded" ? " · superseded" : "") +
+      "</span></div><div class='c'>" + escapeHtml(row.content) +
+      "</div><div class='src'>Declared source: " +
+      escapeHtml((row.source_refs || []).join(" · ")) + "</div>" +
+      (row.status === "superseded" ? "" :
+       "<button class='edit-memory' data-edit-id='" + escapeHtml(row.memory_id) +
+       "'>Correct this memory</button>");
+    memsBox.appendChild(d);
   }
-  for (const [id, m] of byId){
-    m.versions.sort((a, b) => b.version - a.version);
-    for (const v of m.versions){
-      const d = document.createElement("div");
-      d.className = "mem" + (v.status === "superseded" ? " superseded" : "");
-      d.innerHTML = "<div class='t'>" + escapeHtml(m.title) +
-        " <span class='ver" + (v.status === "superseded" ? " sup" : "") + "'>v" + v.version + (v.status === "superseded" ? " · superseded" : "") + "</span></div>" +
-        "<div class='c'>" + escapeHtml(v.content) + "</div>" +
-        "<div class='src'>📄 " + escapeHtml((v.source_refs || []).join(" · ")) + "</div>";
-      memsBox.appendChild(d);
-    }
-  }
+  if (!page.total_memories) memsBox.textContent = "No memories in this session. Run the synthetic demo or add one.";
+  const start = page.total_memories ? memoryOffset + 1 : 0;
+  const end = Math.min(memoryOffset + pageSize, page.total_memories);
+  $("page-label").textContent = start + "–" + end + " of " + page.total_memories + " memories";
+  $("prev-page").disabled = busy || memoryOffset === 0;
+  $("next-page").disabled = busy || !page.has_more;
+  $("next-page").dataset.offset = page.next_offset == null ? "" : String(page.next_offset);
 }
 
-/* ---- deterministic mini-agent ---- */
+function fmtSingle(row){
+  return escapeHtml(row.content) + "\n<span class='meta'>Memory “" +
+    escapeHtml(row.title) + "” · v" + escapeHtml(row.version) +
+    " · declared source: " + escapeHtml((row.source_refs || []).join(" · ")) +
+    " · recorded " + escapeHtml(row.updated_at) + "</span>";
+}
 function fmtRecall(data){
-  if (!data || !data.results || data.results.length === 0)
-    return "I have nothing on that in long-term memory.";
-  const r = data.results[0];
-  seen.set(r.memory_id, r.version);
-  return r.content + "\n<span class='meta'>from memory “" + escapeHtml(r.title) + "” v" + r.version +
-    " · source: " + escapeHtml((r.source_refs[0] || "")) + " · recorded " + escapeHtml(r.updated_at) + "</span>";
+  if (!data?.results?.length) return "I have nothing on that topic in this session.";
+  if (data.results.length > 1)
+    return "More than one memory matches. Choose the one you mean:" +
+      choicesHtml(data.results, "read");
+  return fmtSingle(data.results[0]);
 }
-
-async function agentReply(input){
-  const t = input.trim(), low = t.toLowerCase();
-  let m;
-  if ((m = t.match(/^(?:remember(?: that)?|note|souviens[- ]toi(?: que)?)\s+(.+)/i))){
-    const body = m[1];
-    const title = body.split(/[:\-–,]/)[0].slice(0, 48).trim() || body.slice(0, 48);
-    const res = await callTool("remember", { title, content: body, source_refs: ["user:" + new Date().toISOString().slice(0, 10)] });
-    seen.set(res.memory_id, res.version);
-    return "Got it — <b>remembered</b> with a receipt.\n<span class='meta'>" + res.memory_id + " · v" + res.version + " · 📄 user:" + new Date().toISOString().slice(0, 10) + "</span>";
-  }
-  if ((m = low.match(/(?:history|audit|versions?)\s+(?:of|for|about)?\s*(.*)/)) && m[1]){
-    const q = await callTool("recall", { query: m[1], limit: 1 });
-    if (q.count === 0) return "No memory matches that.";
-    const h = await callTool("history", { memory_id: q.results[0].memory_id });
-    return "History of “" + escapeHtml(h.title) + "”:\n" +
-      h.chain.map(v => "• v" + v.version + " " + (v.status === "superseded" ? "̶(superseded)̶" : "(current)") + " — " + escapeHtml(v.content) + "  📄" + escapeHtml(v.source_refs[0])).join("\n");
-  }
-  if (/(actually|correction|oops|fix|au fait|non ,)/i.test(low) || /^no[, ]|not \d+/i.test(low)){
-    const topic = low.replace(/.*(?:actually[, ]*|correction[, ]*|oops[, ]*|fix[, ]*)/i, "").replace(/^(it'?s|c'est)\s*/i, "");
-    const q = await callTool("recall", { query: topic || "a", limit: 1 });
-    if (q.count === 0) return "I can't find the memory to correct.";
-    const target = q.results[0];
-    const lastSeen = seen.get(target.memory_id) || target.version;
-    let data;
-    try{
-      data = await callTool("correct", { memory_id: target.memory_id, expected_version: lastSeen, content: topic, source_refs: ["user:correction:" + new Date().toISOString().slice(0, 10)] });
-    }catch(e){
-      if (/stale write/i.test(String(e.message))){
-        const fresh = await callTool("recall", { query: topic, limit: 1 });
-        data = await callTool("correct", { memory_id: target.memory_id, expected_version: fresh.results[0].version, content: topic, source_refs: ["user:correction:" + new Date().toISOString().slice(0, 10)] });
-        return "⚠️ Someone had corrected that memory since I last read it (v" + lastSeen + "). I re-read it (now v" + fresh.results[0].version + ") and applied your correction as <b>v" + data.version + "</b> — nothing was lost.";
-      }
-      throw e;
-    }
-    return "Corrected: “" + escapeHtml(target.title) + "” is now <b>v" + data.version + "</b>. The old version stays in history, marked superseded.";
-  }
-  const q = await callTool("recall", { query: t, limit: 3 });
-  return fmtRecall(q);
+async function historyReply(row){
+  const h = await callTool("history", {memory_id:row.memory_id});
+  return "History of “" + escapeHtml(h.title) + "”:\n" +
+    h.chain.map(v => "• v" + escapeHtml(v.version) + " (" + escapeHtml(v.status) +
+      ") — " + escapeHtml(v.content) + " · declared source: " +
+      escapeHtml((v.source_refs || []).join(" · "))).join("\n");
 }
-
-async function handle(input, fromUser = true){
-  if (fromUser) addMsg("user", escapeHtml(input));
-  const thinking = addMsg("alexa", "…");
-  ring.classList.add("thinking");
+async function applyCorrection(target, content){
   try{
-    const reply = await agentReply(input);
-    thinking.innerHTML = reply;
-  }catch(e){
-    thinking.innerHTML = "<span style='color:var(--err)'>error:</span> " + escapeHtml(e.message);
+    const result = await callTool("correct", {
+      memory_id:target.memory_id, expected_version:target.version, content,
+      source_refs:["demo-user:correction:" + new Date().toISOString()]
+    });
+    return "Corrected the chosen memory “" + escapeHtml(target.title) + "” to <b>v" +
+      escapeHtml(result.version) + "</b>. Its earlier version stays in history.";
+  }catch(error){
+    if (/stale|versionconflict|version conflict/i.test(error.message))
+      return "That memory changed after the version you chose. Your correction was not applied. " +
+        "Review the current memory and choose it again; I will not overwrite it automatically.";
+    throw error;
+  }
+}
+
+/* Deterministic routing; every correction needs an explicitly chosen ID. */
+async function agentReply(input){
+  const text = input.trim();
+  const waiting = pendingAction;
+  clearChoices();
+  const correction = text.match(/^(?:actually|correction|oops|fix|au fait|no|non)\b[\s,:—-]+(.+)$/i);
+  if (/^(?:cancel|never mind|nevermind|annule|annuler|stop)[.!]?$/i.test(text))
+    return "Cancelled. No memory has changed.";
+  if (waiting?.kind === "awaiting-correction" && correction)
+    return applyCorrection(waiting.target, correction[1].trim());
+  let match;
+  if ((match = text.match(/^(?:remember(?: that)?|note|souviens[- ]toi(?: que)?)\s+(.+)/i))){
+    const content = match[1].trim();
+    const title = memoryTitle(content);
+    const result = await callTool("remember", {
+      title, content, source_refs:["demo-user:statement:" + new Date().toISOString()]
+    });
+    lastCreatedMemory = {memory_id:result.memory_id, version:result.version, title};
+    return "Remembered with a <b>declared user source</b>, not a verified document.\n" +
+      "<span class='meta'>" + escapeHtml(result.memory_id) + " · v" +
+      escapeHtml(result.version) + "</span>";
+  }
+  if (correction){
+    const content = correction[1].trim();
+    const page = await callTool("list_memories", {limit:pageSize, offset:memoryOffset});
+    if (!page.results.length) return "There is no memory to correct in this session.";
+    pendingAction = {kind:"correct", content};
+    return "Which memory should receive this correction? Nothing has changed yet.\n" +
+      "<span class='meta'>New content: " + escapeHtml(content) + "</span>" +
+      choicesHtml(page.results, "correct") +
+      "<span class='meta'>Use the inventory pages to choose any other memory, or send a new request to cancel.</span>";
+  }
+  if ((match = text.match(/^(?:history|audit|versions?)\s+(?:(?:of|for|about)\s+)?(.+)$/i))){
+    const result = await callTool("recall", {query:match[1], limit:10});
+    if (!result.results.length) return "No memory matches that topic.";
+    if (result.results.length > 1)
+      return "Choose the memory whose history you want:" + choicesHtml(result.results, "history");
+    return historyReply(result.results[0]);
+  }
+  return fmtRecall(await callTool("recall", {query:text, limit:10}));
+}
+async function chooseMemory(token){
+  const choice = choiceTargets.get(token);
+  if (!choice) return;
+  const pending = pendingAction;
+  clearChoices();
+  let reply;
+  if (choice.action === "correct"){
+    if (pending?.kind !== "correct") return;
+    reply = await applyCorrection(choice.row, pending.content);
+  }else if (choice.action === "history") reply = await historyReply(choice.row);
+  else reply = fmtSingle(choice.row);
+  const node = addMsg("alexa", reply); speakReply(node.textContent);
+  await refreshMemories();
+}
+async function editFromInventory(id){
+  const target = inventory.get(id);
+  if (!target) return;
+  if (pendingAction?.kind === "correct"){
+    const content = pendingAction.content;
+    clearChoices();
+    const node = addMsg("alexa", await applyCorrection(target, content));
+    speakReply(node.textContent); await refreshMemories();
+  }else{
+    clearChoices();
+    pendingAction = {kind:"awaiting-correction", target};
+    addMsg("alexa", "You chose “" + escapeHtml(target.title) + "” v" +
+      escapeHtml(target.version) + ". Enter ‘Correction:’ followed by its complete replacement text. Questions remain read-only.");
+  }
+}
+async function handle(input){
+  addMsg("user", escapeHtml(input));
+  const thinking = addMsg("alexa", "…");
+  try{
+    thinking.innerHTML = await agentReply(input);
+    speakReply(thinking.textContent);
+  }catch(error){
+    thinking.innerHTML = "<span class='error'>Request failed:</span> " + escapeHtml(error.message);
   }finally{
-    ring.classList.remove("thinking");
     log.scrollTop = log.scrollHeight;
     await refreshMemories();
   }
 }
 
-/* ---- demo scenario ---- */
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-async function playDemo(){
-  const script = [
-    "Remember that my apartment lease with Marignier Properties is 24 months, ending March 2028",
-    "What about my lease?",
-    "Remember that my dentist is Dr. Ferrand, 12 rue des Lilas, checkup every 6 months",
-    "Actually, the lease is 18 months, ending September 2027 — I misread the contract",
-    "History of the lease",
-    "What about my dentist?"
-  ];
-  for (const line of script){ await handle(line); await sleep(900); }
-  addMsg("alexa", "Every fact above carries <b>who said it and when</b>, every correction kept its ancestor, and a stale correction is refused instead of overwriting. That's <b>memory with receipts</b>.");
+function localVoice(){
+  return window.speechSynthesis?.getVoices().find(v => v.localService && /^en(?:-|$)/i.test(v.lang)) || null;
 }
-
-/* ---- wiring ---- */
-$("send").onclick = () => { const v = $("inp").value; if (v.trim()){ $("inp").value = ""; handle(v); } };
-$("inp").addEventListener("keydown", e => { if (e.key === "Enter") $("send").click(); });
-$("demo").onclick = () => playDemo().catch(console.error);
-$("mic").onclick = () => {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR){ alert("Voice input needs Chrome."); return; }
-  const r = new SR(); r.lang = "en-US"; r.start();
-  r.onresult = ev => { const t = ev.results[0][0].transcript; $("inp").value = t; handle(t); $("inp").value = ""; };
-};
-connect().then(() => refreshMemories()).catch(e => { $("status").textContent = "connection failed: " + e.message; });
+function updateVoiceControl(){
+  const available = Boolean(localVoice() && window.SpeechSynthesisUtterance);
+  $("voice").disabled = !available;
+  $("voice").title = available ? "Optional response using an installed local English voice" :
+    "No installed local English voice is available";
+  if (!available) voiceOn = false;
+  $("voice").textContent = voiceOn ? "🔊 Voice on" : "🔈 Voice off";
+  $("voice").setAttribute("aria-pressed", String(voiceOn));
+}
+function speakReply(text){
+  const voice = localVoice();
+  if (!voiceOn || !voice || !window.SpeechSynthesisUtterance) return;
+  const utterance = new window.SpeechSynthesisUtterance(text.slice(0, 900));
+  utterance.voice = voice; utterance.lang = voice.lang;
+  window.speechSynthesis.cancel(); window.speechSynthesis.speak(utterance);
+}
+async function interaction(action){
+  if (busy) return;
+  busy = true; ring.classList.add("thinking");
+  for (const id of ["send","demo","new-session","inp","prev-page","next-page"]) $(id).disabled = true;
+  try{ await action(); }
+  catch(error){ addMsg("alexa", "Request failed: " + escapeHtml(error.message)); }
+  finally{
+    busy = false; ring.classList.remove("thinking");
+    for (const id of ["send","demo","new-session","inp"]) $(id).disabled = false;
+    $("demo").disabled = storageMode === "local_durable";
+    $("prev-page").disabled = memoryOffset === 0;
+    $("next-page").disabled = $("next-page").dataset.offset === "";
+  }
+}
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+async function playDemo(){
+  if (storageMode !== "temporary_demo")
+    throw new Error("This local store is durable. The synthetic script is available in --demo mode only.");
+  await newSession(false);
+  addMsg("alexa", "Synthetic scripted demo in a new session. It chooses only the exact memory ID it creates.");
+  await handle("Remember that my apartment lease is 24 months, ending March 2028");
+  const lease = lastCreatedMemory;
+  await sleep(400); await handle("What about my lease?");
+  await sleep(400); await handle("Remember that my dentist is Dr. Ferrand");
+  await sleep(400); await handle("What about my passport?");
+  await sleep(400); await handle("Actually, my lease is 18 months, ending September 2027");
+  clearChoices();
+  addMsg("alexa", "Script explicitly chooses its lease memory: " + escapeHtml(lease.memory_id) + ".");
+  addMsg("alexa", await applyCorrection(lease, "my lease is 18 months, ending September 2027"));
+  await refreshMemories();
+  await sleep(400); await handle("History of the lease");
+  await sleep(400); await handle("What about my dentist?");
+  const node = addMsg("alexa", "The passport was not invented, and the dentist was not changed. " +
+    "The chosen lease has two versions. User sources are declarations; local consistency checks do not authenticate documents.");
+  speakReply(node.textContent);
+}
+function start(){
+  $("send").onclick = () => {
+    const value = $("inp").value;
+    if (!value.trim()) return;
+    interaction(async () => { $("inp").value = ""; await handle(value); });
+  };
+  $("inp").addEventListener("keydown", event => { if (event.key === "Enter") $("send").click(); });
+  $("demo").onclick = () => interaction(playDemo);
+  $("new-session").onclick = () => interaction(() => newSession());
+  $("prev-page").onclick = () => interaction(async () => {
+    memoryOffset = Math.max(0, memoryOffset - pageSize); await refreshMemories();
+  });
+  $("next-page").onclick = () => interaction(async () => {
+    const offset = $("next-page").dataset.offset;
+    if (offset !== "") { memoryOffset = Number(offset); await refreshMemories(); }
+  });
+  log.addEventListener("click", event => {
+    const button = event.target.closest("button[data-choice-token]");
+    if (button) interaction(() => chooseMemory(button.dataset.choiceToken));
+  });
+  memsBox.addEventListener("click", event => {
+    const button = event.target.closest("button[data-edit-id]");
+    if (button) interaction(() => editFromInventory(button.dataset.editId));
+  });
+  $("voice").onclick = () => {
+    voiceOn = !voiceOn && Boolean(localVoice());
+    if (!voiceOn && window.speechSynthesis) window.speechSynthesis.cancel();
+    updateVoiceControl();
+  };
+  if (window.speechSynthesis) window.speechSynthesis.addEventListener("voiceschanged", updateVoiceControl);
+  updateVoiceControl();
+  interaction(async () => {
+    await connect(); await refreshMemories();
+    addMsg("alexa", storageMode === "local_durable" ?
+      "This local store keeps memories across reconnects and restarts. Reconnect does not erase them. " +
+      "The scripted demo is disabled here. Corrections require your choice; optional local voice starts off." :
+      "Try the synthetic demo or add a made-up fact. This temporary session ends after 30 minutes idle or server stop; " +
+      "refresh starts a new one. Questions search; corrections require your choice. Optional local voice starts off.");
+    document.querySelector(".hint").textContent = storageMode === "local_durable" ?
+      "Local durable storage · reconnect preserves memory · declared sources are not verified documents · no model or keys" :
+      "Synthetic session only · temporary until 30 minutes idle or server stop · refresh starts empty · corrections require your choice";
+  });
+}
+start();
 </script>
 </body>
 </html>
