@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mnemo — Long-term memory for Alexa+ (MCP)</title>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#111820; --panel2:#0e141b; --line:#1e2a36;
+    --txt:#e8eef4; --dim:#8aa0b4; --cyan:#31c8ff; --cyan2:#00a8e0;
+    --ok:#3ddc84; --warn:#ffb454; --err:#ff5f6d; --sup:#5a6b7c;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+  header{display:flex;align-items:center;gap:14px;padding:10px 18px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#0d131a,#0b0f14)}
+  .ring{width:34px;height:34px;border-radius:50%;border:3px solid #12333f;position:relative;flex:none}
+  .ring::after{content:"";position:absolute;inset:-3px;border-radius:50%;border:3px solid transparent;border-top-color:var(--cyan);opacity:0;transition:opacity .2s}
+  .ring.thinking::after{opacity:1;animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  header h1{font-size:16px;font-weight:600;letter-spacing:.3px}
+  header .sub{color:var(--dim);font-size:12px}
+  .badge{margin-left:auto;background:#0e2733;color:var(--cyan);border:1px solid #14404f;border-radius:99px;padding:3px 10px;font-size:11px;font-weight:600}
+  main{flex:1;display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:0;min-height:0}
+  /* chat */
+  #chat{display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--line)}
+  #log{flex:1;overflow-y:auto;padding:18px;display:flex;flex-direction:column;gap:12px}
+  .msg{max-width:78%;padding:10px 14px;border-radius:16px;white-space:pre-wrap}
+  .msg.user{align-self:flex-end;background:#123a4d;border-bottom-right-radius:4px}
+  .msg.alexa{align-self:flex-start;background:var(--panel);border:1px solid var(--line);border-bottom-left-radius:4px}
+  .msg .meta{display:block;margin-top:6px;font-size:11px;color:var(--dim)}
+  .msg .tools{display:inline-block;margin-top:6px;font-size:11px;color:var(--cyan);background:#0b2836;border-radius:6px;padding:2px 8px}
+  #composer{display:flex;gap:10px;padding:12px 18px;border-top:1px solid var(--line);background:var(--panel2)}
+  #composer input{flex:1;background:#0b1118;border:1px solid var(--line);color:var(--txt);border-radius:10px;padding:10px 14px;font-size:14px;outline:none}
+  #composer input:focus{border-color:var(--cyan2)}
+  button{cursor:pointer;border:none;border-radius:10px;font-weight:600;font-size:13px;padding:10px 16px}
+  #send{background:var(--cyan2);color:#001522}
+  #demo{background:#153024;color:var(--ok);margin-right:0}
+  #mic{background:#1a2340;color:#9db4ff}
+  /* right */
+  #side{display:flex;flex-direction:column;min-height:0;background:var(--panel2)}
+  #side h2{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);padding:10px 14px;border-bottom:1px solid var(--line)}
+  #proto{height:46%;overflow-y:auto;font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;padding:8px}
+  .frame{border-left:3px solid var(--line);padding:6px 8px;margin-bottom:6px;background:#0c1218;border-radius:0 6px 6px 0;word-break:break-all}
+  .frame.req{border-color:var(--cyan)}
+  .frame.res{border-color:var(--ok)}
+  .frame.err{border-color:var(--err)}
+  .frame b{color:var(--cyan);display:block;font-size:10px;margin-bottom:3px}
+  #mems{flex:1;overflow-y:auto;padding:10px}
+  .mem{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px}
+  .mem .t{font-weight:600;display:flex;align-items:center;gap:8px}
+  .ver{font-size:10px;background:#0e2733;color:var(--cyan);border-radius:5px;padding:1px 6px}
+  .ver.sup{background:#232a31;color:var(--sup);text-decoration:line-through}
+  .mem .c{color:var(--dim);font-size:12px;margin-top:4px}
+  .mem .src{font-size:10px;color:#5f7383;margin-top:5px}
+  .mem.superseded{opacity:.55}
+  .mem.superseded .c{text-decoration:line-through}
+  .hint{color:var(--dim);font-size:11px;padding:6px 14px;border-top:1px solid var(--line)}
+  #status{font-size:11px;padding:4px 14px;color:var(--dim)}
+  #status.on{color:var(--ok)}
+</style>
+</head>
+<body>
+<header>
+  <div class="ring" id="ring"></div>
+  <div>
+    <h1>Alexa+ &nbsp;·&nbsp; <span style="color:var(--cyan)">Mnemo</span> memory</h1>
+    <div class="sub">simulated Alexa+ experience · talks to a real MCP server (Streamable HTTP)</div>
+  </div>
+  <div class="badge" id="proto-badge">MCP …</div>
+</header>
+<main>
+  <section id="chat">
+    <div id="log"></div>
+    <div id="composer">
+      <button id="demo" title="Play the scripted demo scenario">▶ Demo</button>
+      <button id="mic" title="Voice input (Chrome)">🎙</button>
+      <input id="inp" placeholder="e.g. “Remember that my lease is 24 months” / “What about my lease?” / “Actually, it's 18 months”" autocomplete="off">
+      <button id="send">Send</button>
+    </div>
+    <div class="hint">Deterministic local agent (no LLM, no keys): “remember …” records · questions recall · “actually/correction …” corrects with version check · “history of …” audits.</div>
+  </section>
+  <aside id="side">
+    <h2>MCP protocol — live</h2>
+    <div id="proto"></div>
+    <h2>Memory — versioned</h2>
+    <div id="mems"><div class="mem"><div class="c">Empty. Ask Alexa to remember something, or run the demo.</div></div></div>
+    <div id="status">connecting…</div>
+  </aside>
+</main>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const log = $("log"), proto = $("proto"), memsBox = $("mems"), ring = $("ring");
+let session = null, protocol = null, nextId = 1;
+const seen = new Map();      // memory_id -> last version seen by the "agent"
+
+function addMsg(cls, html){ const d = document.createElement("div"); d.className = "msg " + cls; d.innerHTML = html; log.appendChild(d); log.scrollTop = log.scrollHeight; return d; }
+function frame(kind, label, data){ const d = document.createElement("div"); d.className = "frame " + kind; d.innerHTML = "<b>" + label + "</b>" + escapeHtml(typeof data === "string" ? data : JSON.stringify(data)); proto.appendChild(d); proto.scrollTop = proto.scrollHeight; }
+function escapeHtml(s){ return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* ---- real MCP client (Streamable HTTP) ---- */
+async function rpc(method, params, isNotification = false){
+  const body = isNotification
+    ? { jsonrpc:"2.0", method }
+    : { jsonrpc:"2.0", id: nextId++, method, params: params || {} };
+  frame("req", "→ " + method + (isNotification ? " (notification)" : ""), body);
+  ring.classList.add("thinking");
+  try{
+    const headers = { "Content-Type":"application/json", "Accept":"application/json, text/event-stream" };
+    if (session) headers["Mcp-Session-Id"] = session;
+    const resp = await fetch("/mcp", { method:"POST", headers, body: JSON.stringify(body) });
+    if (!session && resp.headers.get("Mcp-Session-Id")) session = resp.headers.get("Mcp-Session-Id");
+    const ct = (resp.headers.get("Content-Type") || "");
+    let msg = null;
+    if (ct.includes("event-stream")){
+      const text = await resp.text();
+      for (const line of text.split("\n")){
+        if (!line.startsWith("data:")) continue;
+        try{ const m = JSON.parse(line.slice(5).trim());
+             if (m.id === body.id || (!isNotification && m.result !== undefined && m.method === undefined && m.id !== undefined && m.id === body.id)) msg = m;
+             if (m.id === body.id) msg = m; }catch(e){}
+      }
+    } else if (ct.includes("application/json")){
+      msg = await resp.json();
+    }
+    if (resp.status === 202){ frame("res", "← 202 Accepted", ""); ring.classList.remove("thinking"); return null; }
+    frame(msg && msg.error ? "err" : "res", "← " + method, msg || ("HTTP " + resp.status));
+    if (msg && msg.error) throw new Error(msg.error.message || JSON.stringify(msg.error));
+    return msg ? msg.result : null;
+  } finally { ring.classList.remove("thinking"); }
+}
+
+async function connect(){
+  const init = await rpc("initialize", {
+    protocolVersion: "2025-11-25",
+    capabilities: {},
+    clientInfo: { name: "mnemo-simulator", version: "1.0.0" }
+  });
+  protocol = init && init.protocolVersion;
+  $("proto-badge").textContent = "MCP " + (protocol || "?");
+  await rpc("notifications/initialized", null, true);
+  const tools = await rpc("tools/list", {});
+  const names = tools.tools.map(t => t.name).join(", ");
+  $("status").textContent = "connected · server: " + (init.serverInfo.name + " " + (init.serverInfo.version || "")) + " · tools: " + names;
+  $("status").className = "on";
+  addMsg("alexa", "Hi! I'm Alexa with <b>Mnemo</b> long-term memory. Everything I store carries <i>provenance</i>, and corrections keep their history. Try me, or press <b>▶ Demo</b>.");
+}
+
+/* ---- tool helpers ---- */
+async function callTool(name, args){
+  const res = await rpc("tools/call", { name, arguments: args });
+  const text = (res.content || []).map(c => c.text).join("\n");
+  let data = null; try{ data = JSON.parse(text); }catch(e){}
+  if (res.isError) throw new Error(text);
+  return data !== null ? data : text;
+}
+
+/* ---- memory panel ---- */
+async function refreshMemories(){
+  const st = await callTool("stats", {});
+  if (!st.memories){ memsBox.innerHTML = ""; return; }
+  const res = await callTool("recall", { query: "a e i o u lease dentist passport car insurance doctor bank wifi energy book trip project idea", limit: 20, include_superseded: true });
+  memsBox.innerHTML = "";
+  const byId = new Map();
+  for (const r of res.results){
+    if (!byId.has(r.memory_id)) byId.set(r.memory_id, { title: r.title, versions: [] });
+    byId.get(r.memory_id).versions.push(r);
+  }
+  for (const [id, m] of byId){
+    m.versions.sort((a, b) => b.version - a.version);
+    for (const v of m.versions){
+      const d = document.createElement("div");
+      d.className = "mem" + (v.status === "superseded" ? " superseded" : "");
+      d.innerHTML = "<div class='t'>" + escapeHtml(m.title) +
+        " <span class='ver" + (v.status === "superseded" ? " sup" : "") + "'>v" + v.version + (v.status === "superseded" ? " · superseded" : "") + "</span></div>" +
+        "<div class='c'>" + escapeHtml(v.content) + "</div>" +
+        "<div class='src'>📄 " + escapeHtml((v.source_refs || []).join(" · ")) + "</div>";
+      memsBox.appendChild(d);
+    }
+  }
+}
+
+/* ---- deterministic mini-agent ---- */
+function fmtRecall(data){
+  if (!data || !data.results || data.results.length === 0)
+    return "I have nothing on that in long-term memory.";
+  const r = data.results[0];
+  seen.set(r.memory_id, r.version);
+  return r.content + "\n<span class='meta'>from memory “" + escapeHtml(r.title) + "” v" + r.version +
+    " · source: " + escapeHtml((r.source_refs[0] || "")) + " · recorded " + escapeHtml(r.updated_at) + "</span>";
+}
+
+async function agentReply(input){
+  const t = input.trim(), low = t.toLowerCase();
+  let m;
+  if ((m = t.match(/^(?:remember(?: that)?|note|souviens[- ]toi(?: que)?)\s+(.+)/i))){
+    const body = m[1];
+    const title = body.split(/[:\-–,]/)[0].slice(0, 48).trim() || body.slice(0, 48);
+    const res = await callTool("remember", { title, content: body, source_refs: ["user:" + new Date().toISOString().slice(0, 10)] });
+    seen.set(res.memory_id, res.version);
+    return "Got it — <b>remembered</b> with a receipt.\n<span class='meta'>" + res.memory_id + " · v" + res.version + " · 📄 user:" + new Date().toISOString().slice(0, 10) + "</span>";
+  }
+  if ((m = low.match(/(?:history|audit|versions?)\s+(?:of|for|about)?\s*(.*)/)) && m[1]){
+    const q = await callTool("recall", { query: m[1], limit: 1 });
+    if (q.count === 0) return "No memory matches that.";
+    const h = await callTool("history", { memory_id: q.results[0].memory_id });
+    return "History of “" + escapeHtml(h.title) + "”:\n" +
+      h.chain.map(v => "• v" + v.version + " " + (v.status === "superseded" ? "̶(superseded)̶" : "(current)") + " — " + escapeHtml(v.content) + "  📄" + escapeHtml(v.source_refs[0])).join("\n");
+  }
+  if (/(actually|correction|oops|fix|au fait|non ,)/i.test(low) || /^no[, ]|not \d+/i.test(low)){
+    const topic = low.replace(/.*(?:actually[, ]*|correction[, ]*|oops[, ]*|fix[, ]*)/i, "").replace(/^(it'?s|c'est)\s*/i, "");
+    const q = await callTool("recall", { query: topic || "a", limit: 1 });
+    if (q.count === 0) return "I can't find the memory to correct.";
+    const target = q.results[0];
+    const lastSeen = seen.get(target.memory_id) || target.version;
+    let data;
+    try{
+      data = await callTool("correct", { memory_id: target.memory_id, expected_version: lastSeen, content: topic, source_refs: ["user:correction:" + new Date().toISOString().slice(0, 10)] });
+    }catch(e){
+      if (/stale write/i.test(String(e.message))){
+        const fresh = await callTool("recall", { query: topic, limit: 1 });
+        data = await callTool("correct", { memory_id: target.memory_id, expected_version: fresh.results[0].version, content: topic, source_refs: ["user:correction:" + new Date().toISOString().slice(0, 10)] });
+        return "⚠️ Someone had corrected that memory since I last read it (v" + lastSeen + "). I re-read it (now v" + fresh.results[0].version + ") and applied your correction as <b>v" + data.version + "</b> — nothing was lost.";
+      }
+      throw e;
+    }
+    return "Corrected: “" + escapeHtml(target.title) + "” is now <b>v" + data.version + "</b>. The old version stays in history, marked superseded.";
+  }
+  const q = await callTool("recall", { query: t, limit: 3 });
+  return fmtRecall(q);
+}
+
+async function handle(input, fromUser = true){
+  if (fromUser) addMsg("user", escapeHtml(input));
+  const thinking = addMsg("alexa", "…");
+  ring.classList.add("thinking");
+  try{
+    const reply = await agentReply(input);
+    thinking.innerHTML = reply;
+  }catch(e){
+    thinking.innerHTML = "<span style='color:var(--err)'>error:</span> " + escapeHtml(e.message);
+  }finally{
+    ring.classList.remove("thinking");
+    log.scrollTop = log.scrollHeight;
+    await refreshMemories();
+  }
+}
+
+/* ---- demo scenario ---- */
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function playDemo(){
+  const script = [
+    "Remember that my apartment lease with Marignier Properties is 24 months, ending March 2028",
+    "What about my lease?",
+    "Remember that my dentist is Dr. Ferrand, 12 rue des Lilas, checkup every 6 months",
+    "Actually, the lease is 18 months, ending September 2027 — I misread the contract",
+    "History of the lease",
+    "What about my dentist?"
+  ];
+  for (const line of script){ await handle(line); await sleep(900); }
+  addMsg("alexa", "Every fact above carries <b>who said it and when</b>, every correction kept its ancestor, and a stale correction is refused instead of overwriting. That's <b>memory with receipts</b>.");
+}
+
+/* ---- wiring ---- */
+$("send").onclick = () => { const v = $("inp").value; if (v.trim()){ $("inp").value = ""; handle(v); } };
+$("inp").addEventListener("keydown", e => { if (e.key === "Enter") $("send").click(); });
+$("demo").onclick = () => playDemo().catch(console.error);
+$("mic").onclick = () => {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR){ alert("Voice input needs Chrome."); return; }
+  const r = new SR(); r.lang = "en-US"; r.start();
+  r.onresult = ev => { const t = ev.results[0][0].transcript; $("inp").value = t; handle(t); $("inp").value = ""; };
+};
+connect().then(() => refreshMemories()).catch(e => { $("status").textContent = "connection failed: " + e.message; });
+</script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+mnemo.db
+mnemo.db-*
+.DS_Store
+store.py.txt
