@@ -8,7 +8,9 @@ The browser offers this task in French or English. It is a simulated Alexa+ clie
 
 The design comes from a separate multi-agent memory system. This standalone project has its own SQLite store; a demonstration does not establish the correctness, safety, or completeness of that other system.
 
-The [earlier one-minute walkthrough](https://youtu.be/iNJlMGLmAwU) shows the underlying versioned-memory interaction in the previous interface: choose a lease, correct it and inspect both versions. It predates the workshop planner and the current design. It uses real UI stills with English captions and synthetic narration.
+The [current 87-second walkthrough](https://youtu.be/xwvZ3CgVz7Y) shows the real version 1.2 interface, the room change, the explicit adaptation choice and the current plan. Its stale-export segment reproduces the exact response from a separately received live local HTTP check, labelled as such. English captions and locally generated Kokoro narration accompany actual browser capture.
+
+The [earlier one-minute walkthrough](https://youtu.be/iNJlMGLmAwU) preserves the previous memory interface: choose a lease, correct it and inspect both versions. It predates the workshop planner and current design; it remains historical evidence.
 
 ## Try it locally
 
