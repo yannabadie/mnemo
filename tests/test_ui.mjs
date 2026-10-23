@@ -35,7 +35,8 @@ class Element{
  appendChild(node){this.children.push(node);node.parent=this;return node;}
  get firstChild(){return this.children[0];}
  remove(){if(this.parent)this.parent.children.splice(this.parent.children.indexOf(this),1);}
- addEventListener(){}
+ addEventListener(type,handler){this.handlers ||= {};this.handlers[type]=handler;}
+ dispatch(type,event={}){return this.handlers?.[type]?.({preventDefault(){},...event});}
  setAttribute(name,value){this.attributes[name]=String(value);}
  removeAttribute(name){delete this.attributes[name];}
  hasAttribute(name){return name in this.attributes;}
@@ -374,6 +375,9 @@ test("changed-capacity impact uses the actual old and current brief and exposes 
   assert.match(markup,/>105 min</);assert.match(markup,/>45 min</);
   assert.match(markup,/15 min de marge/);assert.match(markup,/75 min de marge/);
   assert.match(markup,/Vous devrez choisir les personnes/);
+  assert.match(markup,/60 min de plus que le plan v1 \(45 min\)/);
+  assert.match(markup,/Même durée que le plan v1 \(45 min\)/);
+  assert.deepEqual(JSON.parse(c.run("JSON.stringify(activePlan.options.map(option=>getOptionTimeChange(option).delta_minutes))")),[60,0]);
  }finally{await c.close();}
 });
 
@@ -389,9 +393,11 @@ test("impact and option consequences adapt to an 18-person brief rather than fix
   const markup=c.get("plan-result").innerHTML;
   assert.match(markup,/18 personnes peuvent participer/);assert.match(markup,/8 personnes restent sur liste d’attente/);
   assert.match(markup,/>70 min</);assert.match(markup,/>30 min</);
+  assert.match(markup,/40 min de plus que le plan v1 \(30 min\)/);
   c.run("language='en'");c.context.renderLanguage();
   assert.match(c.get("plan-result").innerHTML,/8 people remain on the waitlist/);
   assert.match(c.get("plan-result").innerHTML,/50 min spare/);
+  assert.match(c.get("plan-result").innerHTML,/40 min longer than plan v1 \(30 min\)/);
  }finally{await c.close();}
 });
 
@@ -421,7 +427,24 @@ test("different calendar contexts and unrelated workshop IDs are not compared as
   assert.match(c.get("plan-result").innerHTML,/Europe\/Paris/);
   await selectWorkshop(c,brief({title:"Another workshop",capacity:6}));
   assert.equal(c.run("getPlanImpact(activePlan)"),null);
+  assert.equal(c.run("getOptionTimeChange(activePlan.options[0])"),null);
   assert.doesNotMatch(c.get("plan-result").innerHTML,/Depuis le plan/);
+ }finally{await c.close();}
+});
+
+test("option time comparison includes previous transitions and permits shorter running orders",async()=>{
+ const c=client();
+ try{
+  const initial=brief({capacity:6,end:"13:00"});await selectWorkshop(c,initial);await c.context.prepareWorkshop("split");
+  c.context.openBriefEditor();await c.context.saveBrief({...initial,capacity:4,session_minutes:20,transition_minutes:5},["synthetic:shorter format"]);
+  assert.equal(c.run("activePlan.status"),"needs_decision");
+  assert.deepEqual(JSON.parse(c.run("JSON.stringify(activePlan.options.map(option=>getOptionTimeChange(option)))")),[
+   {before_version:1,before_minutes:105,after_minutes:70,delta_minutes:-35},
+   {before_version:1,before_minutes:105,after_minutes:20,delta_minutes:-85}
+  ]);
+  assert.match(c.get("plan-result").innerHTML,/35 min de moins que le plan v1 \(105 min\)/);
+  c.run("language='en'");c.context.renderLanguage();
+  assert.match(c.get("plan-result").innerHTML,/85 min shorter than plan v1 \(105 min\)/);
  }finally{await c.close();}
 });
 
@@ -434,5 +457,86 @@ test("additional real consequences remain available when several constraints cha
   assert.match(c.get("plan-result").innerHTML,/Autres conséquences \(2\)/);
   assert.match(c.get("plan-result").innerHTML,/durée demandée par séance passe de 45 à 60 min/);
   assert.match(c.get("plan-result").innerHTML,/20 personnes/);
+ }finally{await c.close();}
+});
+
+async function bindWorkshopForm(c){
+ c.context.connect=async()=>{c.run("connected=true;storageMode='temporary_demo'");c.context.setConnection("connected");};
+ c.context.start();await settleUI(c);
+}
+async function settleUI(c){
+ const deadline=Date.now()+3000;
+ while(c.run("busy")){if(Date.now()>deadline)throw new Error("UI action did not settle");await new Promise(resolve=>setTimeout(resolve,1));}
+}
+
+test("conflict reload cannot reintroduce the old capacity through the actual form handlers",async()=>{
+ const c=client();
+ try{
+  const row=await selectWorkshop(c);await bindWorkshopForm(c);
+  c.get("edit-brief").onclick();
+  assert.equal(c.get("brief-capacity").value,"12");
+  c.get("brief-source").value="synthetic:old draft note";
+  await c.context.changeRoom();
+  assert.equal(c.run("workshopMemory.version"),2);
+  c.get("brief-form").dispatch("submit");await settleUI(c);
+  assert.match(c.get("brief-error").textContent,/pas été appliquée/);
+  assert.equal(c.get("review-edit-version").hidden,false);
+  assert.equal(c.run("briefEditTarget"),null);assert.equal(c.get("save-brief").disabled,true);
+  assert.match(c.get("brief-editor-context").textContent,/non enregistrable/);
+  await c.get("review-edit-version").onclick();
+  assert.match(c.get("feedback").textContent,/brouillon précédent/);
+  c.get("brief-form").dispatch("submit");await settleUI(c);
+  const history=await c.tool("history",{memory_id:row.memory_id}),latest=history.chain.at(-1);
+  assert.deepEqual({version:latest.version,capacity:JSON.parse(latest.content).capacity},{version:2,capacity:6});
+  assert.equal(history.chain.length,2);
+  assert.equal(c.get("brief-capacity").value,"6");
+  assert.equal(c.get("brief-source").value,"");
+  assert.match(c.get("brief-error").textContent,/source du changement/);
+  c.get("brief-capacity").value="5";c.get("brief-source").value="synthetic:explicit five-seat choice";
+  c.get("brief-form").dispatch("submit");await settleUI(c);
+  const corrected=(await c.tool("history",{memory_id:row.memory_id})).chain.at(-1);
+  assert.equal(corrected.version,3);assert.equal(JSON.parse(corrected.content).capacity,5);
+  assert.match(corrected.source_refs.join(" / "),/explicit five-seat choice/);
+  assert.equal(c.get("brief-editor").hidden,true);
+ }finally{await c.close();}
+});
+
+test("reloading a conflicted brief replaces every field and clears the old draft source",async()=>{
+ const c=client();
+ try{
+  const row=await selectWorkshop(c);await bindWorkshopForm(c);c.run("language='en'");c.context.renderLanguage();
+  c.get("edit-brief").onclick();c.get("brief-title").value="An abandoned draft";c.get("brief-source").value="synthetic:old draft";
+  const current=brief({title:"Revised workshop",participants:18,capacity:7,event_date:"2026-11-07",timezone:"UTC",start:"13:00",end:"16:00",session_minutes:30,transition_minutes:10});
+  await c.tool("correct",{memory_id:row.memory_id,expected_version:1,content:JSON.stringify(current),source_refs:["synthetic:revised constraints"]});
+  c.get("brief-form").dispatch("submit");await settleUI(c);
+  assert.match(c.get("brief-error").textContent,/draft remains visible but cannot be saved/);
+  await c.get("review-edit-version").onclick();
+  assert.deepEqual(JSON.parse(c.run("JSON.stringify(readBriefForm())")),current);
+  assert.equal(c.run("briefEditTarget.version"),2);assert.equal(c.run("briefEditTarget.memory_id"),row.memory_id);
+  assert.equal(c.get("brief-source").value,"");assert.equal(c.get("brief-error").textContent,"");
+  assert.equal(c.get("review-edit-version").hidden,true);assert.equal(c.get("save-brief").disabled,false);
+  assert.match(c.get("brief-editor-context").textContent,/version 2/);
+  assert.match(c.get("feedback").textContent,/previous draft was not applied and has been replaced/);
+  assert.equal((await c.tool("history",{memory_id:row.memory_id})).chain.length,2);
+ }finally{await c.close();}
+});
+
+test("a failed conflict reload keeps the stale draft disarmed until a successful read",async()=>{
+ const c=client();
+ try{
+  const row=await selectWorkshop(c);await bindWorkshopForm(c);
+  c.get("edit-brief").onclick();c.get("brief-source").value="synthetic:old draft";await c.context.changeRoom();
+  c.get("brief-form").dispatch("submit");await settleUI(c);
+  const before=c.calls.filter(call=>call.name==="correct").length;
+  c.context.callTool=async()=>{throw c.context.appError("network");};
+  await c.get("review-edit-version").onclick();
+  assert.equal(c.run("briefEditTarget"),null);assert.equal(c.get("save-brief").disabled,true);
+  assert.equal(c.get("review-edit-version").hidden,false);assert.equal(c.get("brief-capacity").value,"12");
+  assert.match(c.get("feedback").textContent,/connexion a été interrompue/);
+  c.get("brief-form").dispatch("submit");await settleUI(c);
+  assert.equal(c.calls.filter(call=>call.name==="correct").length,before);
+  c.context.callTool=c.tool;await c.get("review-edit-version").onclick();
+  assert.equal(c.get("brief-capacity").value,"6");assert.equal(c.run("briefEditTarget.version"),2);
+  assert.equal((await c.tool("history",{memory_id:row.memory_id})).chain.length,2);
  }finally{await c.close();}
 });
