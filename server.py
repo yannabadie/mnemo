@@ -27,6 +27,8 @@ from starlette.responses import JSONResponse
 from starlette.staticfiles import StaticFiles
 
 from store import MemoryStore, NotFound, VersionConflict
+from planner import prepare_workshop as plan_workshop, export_workshop as export_plan
+from plan_receipts import PlanReceiptRegistry
 
 DEFAULT_DB = os.environ.get("MNEMO_DB", str(Path(__file__).parent / "mnemo.db"))
 
@@ -69,6 +71,35 @@ class SessionMemoryStores:
                     finalizer()
             self._entries.clear()
             self._directory.cleanup()
+
+
+class SessionPlanReceipts:
+    """Transient plan receipts per server-owned connection, in every storage mode."""
+
+    def __init__(self):
+        self._entries = weakref.WeakKeyDictionary()
+        self._lock = threading.RLock()
+
+    def get(self, session):
+        connection = getattr(session, "_connection", session)
+        with self._lock:
+            entry = self._entries.get(connection)
+            if entry is None:
+                registry = PlanReceiptRegistry()
+                finalizer = weakref.finalize(connection, registry.clear)
+                exit_stack = getattr(connection, "exit_stack", None)
+                if exit_stack is not None:
+                    exit_stack.callback(finalizer)
+                entry = (registry, finalizer)
+                self._entries[connection] = entry
+            return entry[0]
+
+    def close(self):
+        with self._lock:
+            for _, finalizer in list(self._entries.values()):
+                if finalizer.alive:
+                    finalizer()
+            self._entries.clear()
 
 
 class OriginHostGuard:
@@ -120,13 +151,16 @@ def transport_security(public=False, public_origins=()):
 def build_server(db_path: str, isolated_sessions: bool = False) -> MCPServer:
     mcp = MCPServer(
         name="Mnemo",
-        version="1.1.0",
-        description="Versioned memory with declared sources; local durable storage or isolated demo",
+        version="1.2.0",
+        description="Versioned memory and server-checked action receipts; local storage or isolated demo",
         instructions=(
             "Memories have versioned corrections and declared source references. "
             "A source declaration is not independent evidence of its truth. "
             "Identify the intended memory before correcting; never pick a "
             "search result arbitrarily. "
+            "A prepared workshop preview is not an export permission. Use export_workshop "
+            "with its plan_id; the server refuses it if the brief has changed. "
+            "Plan receipts are connection-local and transient, even when facts are durable. "
             + ("This demo is session-isolated, temporary, and intended only for synthetic examples."
                if isolated_sessions else
                "This local durable store preserves memories across reconnects. It has no household authentication.")
@@ -134,6 +168,7 @@ def build_server(db_path: str, isolated_sessions: bool = False) -> MCPServer:
     )
     stores = SessionMemoryStores() if isolated_sessions else None
     persistent = None if isolated_sessions else MemoryStore(db_path)
+    plan_receipts = SessionPlanReceipts()
 
     def current_store(ctx):
         return stores.get(ctx.session) if stores is not None else persistent
@@ -177,8 +212,37 @@ def build_server(db_path: str, isolated_sessions: bool = False) -> MCPServer:
         """Counters for this store only."""
         return invoke(ctx, "stats")
 
+    @mcp.tool()
+    def prepare_workshop(ctx: Context, memory_id: str, expected_version: int,
+                         strategy: str | None = None) -> dict:
+        """Plan the current stored workshop-brief-v1 at an explicit ID/version.
+
+        Choose split or limit explicitly when capacity is insufficient. This
+        read-only operation returns a structured preview and a transient plan_id
+        only when ready. Use export_workshop(plan_id) for the official file.
+        """
+        try:
+            return plan_workshop(current_store(ctx), memory_id, expected_version, strategy,
+                                 receipts=plan_receipts.get(ctx.session))
+        except (ValueError, NotFound, VersionConflict) as error:
+            raise ToolError(type(error).__name__ + ": " + str(error)) from error
+
+    @mcp.tool()
+    def export_workshop(ctx: Context, plan_id: str) -> dict:
+        """Check the current brief version/hash, then export this session's plan.
+
+        A stale or missing receipt is refused, never silently recalculated.
+        Already downloaded copies remain non-revocable snapshots.
+        """
+        try:
+            return export_plan(current_store(ctx), plan_id,
+                               receipts=plan_receipts.get(ctx.session))
+        except (ValueError, NotFound, VersionConflict) as error:
+            raise ToolError(type(error).__name__ + ": " + str(error)) from error
+
     mcp._mnemo_store = persistent
     mcp._mnemo_session_stores = stores
+    mcp._mnemo_plan_receipts = plan_receipts
     return mcp
 
 
@@ -203,6 +267,7 @@ def build_app(db_path: str, public: bool = False, public_origins=(), demo: bool 
             async with previous_lifespan(application) as state:
                 yield state
         finally:
+            mcp._mnemo_plan_receipts.close()
             if isolated:
                 mcp._mnemo_session_stores.close()
             else:

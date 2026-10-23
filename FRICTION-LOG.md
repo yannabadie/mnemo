@@ -1,6 +1,6 @@
 # Mnemo — Friction Log (Amazon Developer Hackathon 2026)
 
-Updated 22 October 2026 to separate the prototype's workarounds from the implementation currently served. These are project observations, not a survey of every SDK tutorial or available Alexa+ client.
+Updated 23 October 2026 to separate the prototype's workarounds from the implementation. These are project observations, not a survey of every SDK tutorial or available Alexa+ client.
 
 ## Entry 1 — Matching examples to the installed SDK
 - **Task attempted**: build the server from an example targeting a different SDK API.
@@ -37,3 +37,19 @@ Updated 22 October 2026 to separate the prototype's workarounds from the impleme
 - **Severity**: medium.
 - **Resolution in this version**: the simulator (`ui/`), real SDK/transport checks and real-browser checks. This establishes the submitted simulation, not a genuine Amazon Alexa device integration.
 - **Actionable suggestion**: provide a discoverable reference client or documented conformance harness so developers can test the lifecycle against the intended platform.
+
+
+## Entry 5 — A memory demo did not explain a useful task
+
+- **Observed on 23 October**: the initial screen foregrounded raw MCP messages and an empty chat. French commands were treated as lexical searches; a question could miss a stored fact. Connection failures could leave controls or status misleading. A successful scripted lease correction did not establish usable free-form interaction.
+- **Product change**: a structured workshop brief now drives a real read-only `prepare_workshop` tool. A room-capacity change invalidates the previous plan, requires a split/limit choice and produces a version-bound running order and text export. An impossible window is refused.
+- **Interface change**: French/English guided actions, current and obsolete plans, visible decisions and direct history by ID replace the implicit command grammar. MCP details remain inspectable in a secondary panel. Loading, timeout, expiry and write-versus-refresh outcomes are separate.
+- **Validation**: isolated storage/planner and real MCP transport tests accompany browser checks. The room-change example is synthetic; it does not establish customer demand, unrestricted language understanding or an actual Alexa device integration.
+
+## Entry 6 — A client freshness read still leaves a read-to-export race
+
+- **Task attempted**: export a prepared plan after the client has read and matched its current memory version and hash.
+- **Observed on 23 October**: another connection can correct the durable brief after that successful read. A local client rendering the cached preview then still uses the old capacity. This is a controlled comparison on this application's actual MCP server, not an Alexa device or a competitor benchmark.
+- **Resolution in version 1.2.0**: preparation returns a preview and opaque receipt only. `export_workshop` checks the receipt against the current version and hash, verifies local history consistency and generates the file under the correction lock. Stale receipts are refused without silently replanning. Valid unchanged and newly prepared plans still export.
+- **Remaining scope**: the connection-local registry is bounded and temporary. A client can copy a preview and downloaded files cannot be revoked. This is a control on this server's official export, not a policy imposed on unrelated tools.
+- **Actionable suggestion**: assistant-tool examples should distinguish preparation from execution, bind execution to the facts used, and test a correction between a successful read and the final action.

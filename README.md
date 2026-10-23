@@ -1,10 +1,14 @@
-# Mnemo — versioned memory for a simulated Alexa+ experience
+# Mnemo — review the decision when the facts change
 
-Mnemo is a self-hosted MCP server and a browser simulator for the Alexa+ track of the Amazon Developer Hackathon. It records facts with **declared sources**, keeps previous versions after a correction, and refuses stale writes. The simulator is a deterministic MCP client; it does not connect to Amazon Alexa or use an LLM.
+A smaller room makes yesterday's workshop plan unusable. Mnemo ties a prepared decision to the facts that produced it. Its server refuses an official export when those facts have changed, even if a client skips its own freshness checks. The workshop example makes that boundary visible: read the current brief, decide how to adapt, then receive a new running order with its version and declared sources.
+
+Try the example with **12 participants, a room reduced from 12 places to 6, and a 10:00–12:00 window**. Keep everyone in two successive groups, or explicitly choose one group with a waiting list. Two 45-minute sessions need a 15-minute transition: the split plan is 10:00–10:45 and 11:00–11:45. A shorter window must refuse that plan rather than invent extra time.
+
+The browser offers this task in French or English. It is a simulated Alexa+ client connected to a real, self-hosted MCP server. Planning is a deterministic backend tool, not a canned screen or an LLM response. No Amazon device connection is claimed.
 
 The design comes from a separate multi-agent memory system. This standalone project has its own SQLite store; a demonstration does not establish the correctness, safety, or completeness of that other system.
 
-[Watch the one-minute walkthrough](https://youtu.be/iNJlMGLmAwU): choose the lease, correct twenty-four months to eighteen, and inspect both versions. The video uses actual UI stills with English captions and synthetic narration. The application below lets you exercise the same interaction.
+The [earlier one-minute walkthrough](https://youtu.be/iNJlMGLmAwU) shows the underlying versioned-memory interaction in the previous interface: choose a lease, correct it and inspect both versions. It predates the workshop planner and the current design. It uses real UI stills with English captions and synthetic narration.
 
 ## Try it locally
 
@@ -15,7 +19,20 @@ pip install -r requirements.txt
 python server.py --demo
 ```
 
-Open http://127.0.0.1:8799/ and choose the synthetic demonstration. No model key or paid inference is needed. Package installation needs network access the first time.
+Open http://127.0.0.1:8799/ and choose **Prepare a workshop**. Change the room, make the adaptation decision and download the resulting text plan. You can also edit the brief, inspect its earlier versions and exercise the general memory tools. No model key or paid inference is needed. Package installation needs network access the first time.
+
+### What a change does
+
+1. The example stores a synthetic brief with declared source references. `prepare_workshop` reads that exact memory ID and expected version.
+2. Changing the room creates a new brief version. The old plan is labelled obsolete and cannot be downloaded as the current result. No adaptation is chosen silently.
+3. A chosen feasible strategy produces sessions, participant totals and a checklist. `prepare_workshop` returns a structured preview and an opaque, connection-local `plan_id`; it does not render an export.
+4. Download calls `export_workshop(plan_id)`. The server checks the unique current brief version, entry hash and local history consistency under the same store lock used by normal corrections, then generates the file. An old receipt fails with `VersionConflict`; no automatic recalculation or fallback file is delivered.
+
+The exported file is a snapshot, current at the server check instant. An already downloaded copy cannot be revoked; a client can also copy a preview independently. Receipts expire with their MCP connection or server, or after bounded LRU eviction (500 receipts and 8 MiB per connection). Durable facts retain their existing local persistence; receipts do not. The tool does not book a room, choose individual attendees, send invitations or write to a calendar. The examples demonstrate a task; user demand and time savings have not been measured.
+
+## What this adds, and what it does not
+
+Versioned memory, source metadata and scheduling are established ideas. The contribution tested here is an application-level action boundary: a prepared plan is not permission to export it indefinitely. A local comparison first reads the correct version and hash, then changes the brief from a second connection before export. A client rendering its cached preview still produces the old plan; the official MCP export refuses that same old receipt. Unchanged and freshly replanned controls export successfully. This compares two policies on this application, not Alexa+, Mem0 or Zep, and does not establish worldwide novelty or a customer benefit in the field.
 
 ### Storage modes
 
@@ -35,12 +52,35 @@ The quick tunnel used during submission is temporary. The repository, video and 
 | `correct(memory_id, expected_version, content, source_refs)` | Correct the explicitly identified memory at the expected version, preserving its history. |
 | `history(memory_id)` | Read versions, declared references, status and timestamps. |
 | `stats()` | Read counters for the current store. |
+| `prepare_workshop(memory_id, expected_version, strategy)` | Read a structured workshop brief from the current session; return a plan, a required decision or a constraint refusal. No write occurs. |
+| `export_workshop(plan_id)` | Check this connection's receipt against the current stored brief, then generate the official text file. Refuse stale, unknown or evicted receipts. |
+
+`strategy` is `null`, `split` or `limit`. A stale version is refused. A capacity conflict without a choice returns `needs_decision` with no export receipt. An infeasible choice returns `blocked`; only `ready` includes sessions and a `plan_id`. Results carry the brief ID, version, entry hash and declared references. Official export text is returned only by `export_workshop` after its server check. The server and browser client are version `1.2.0`; the SDK pin is unchanged.
+
+The brief's content is JSON with the following schema; it is stored through `remember` and revised through `correct`:
+
+```json
+{
+  "schema": "workshop-brief-v1",
+  "title": "Planning workshop",
+  "participants": 12,
+  "capacity": 6,
+  "event_date": "2026-11-06",
+  "timezone": "Europe/Paris",
+  "start": "10:00",
+  "end": "12:00",
+  "session_minutes": 45,
+  "transition_minutes": 15
+}
+```
+
+The planner validates fields, bounds, the calendar date, IANA time zone and local clock validity. It rejects ambiguous or nonexistent local times and windows crossing a clock change. It reads current memory by ID, without trying to infer structured constraints from an arbitrary sentence.
 
 A reference is a declaration from the caller. Requiring it does **not** verify a contract, an email, the caller's identity, or the truth of the fact. The browser's user/date marker is not an authenticated documentary receipt.
 
 ## Correcting the intended memory
 
-The browser identifies the memory before writing a correction. An ambiguous request needs an explicit choice rather than silently selecting the first search result. A stale version is an observable conflict; re-reading is not permission to overwrite a different fact or to claim that the user confirmed it.
+The browser identifies the memory before writing a correction. The guided editor retains the selected ID and expected version; a stale version is an observable conflict. Re-reading is not permission to overwrite a different fact or to claim that the user confirmed it. General recall is explicitly a keyword search, not unrestricted language understanding.
 
 The memory panel uses the listing tool. Recalled content is displayed as text, including text that looks like HTML. Microphone or speech features, when available, use the browser and its permissions; they are optional and do not imply a connection to an Amazon device.
 
@@ -59,8 +99,9 @@ The verifier reads the database without migrating it. Legacy migrations establis
 ## Architecture
 
 ```text
-ui/index.html   deterministic simulated Alexa+ client and visible MCP protocol panel
+ui/index.html   French/English workshop journey, memory editor and optional MCP details
 server.py       official Python MCP SDK, Streamable HTTP, storage-mode and origin controls
+planner.py      constraint validation and read-only, version-bound workshop planning
 store.py        SQLite + FTS5, versioned corrections, validation, migration and transactions
 verify.py       read-only local consistency verifier
 tests/          targeted storage, migration, interface and transport regressions
@@ -72,9 +113,10 @@ The client negotiates MCP, keeps its session and sends the negotiated protocol v
 
 ```bash
 pytest -q
+node tests/test_ui.mjs
 ```
 
-The original suite and the added regression cases cover the problems found during independent review: wrong-topic recall and correction, invalid sources and empty content, index failure rollback, legacy migration, inconsistent history, real inventory, safe text display, isolated public sessions and transport rules. Test receipts identify exactly which checks were executed on each delivered version; a passing unit suite alone does not establish a successful public jury journey.
+The storage and transport regressions preserve wrong-topic refusal, ID/version corrections, rollback, history consistency, inventory, text rendering and session isolation. Workshop tests cover changed constraints, explicit split/limit decisions, infeasible windows, stale versions, malformed briefs and real MCP calls on isolated temporary stores. The JavaScript checks exercise the real planner and memory store, including version checks at download and connection failures. Test receipts identify the exact version and checks; browser acceptance is recorded separately.
 
 ## Scope and next steps
 
