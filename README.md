@@ -8,9 +8,17 @@ The browser offers this task in French or English. It is a simulated Alexa+ clie
 
 The design comes from a separate multi-agent memory system. This standalone project has its own SQLite store; a demonstration does not establish the correctness, safety, or completeness of that other system.
 
-The [current 87-second walkthrough](https://youtu.be/xwvZ3CgVz7Y) shows the real version 1.2 interface, the room change, the explicit adaptation choice and the current plan. Its stale-export segment reproduces the exact response from a separately received live local HTTP check, labelled as such. English captions and locally generated Kokoro narration accompany actual browser capture.
+The [current 87-second walkthrough](https://youtu.be/xwvZ3CgVz7Y) shows the real version 1.2 interface, the room change, the explicit adaptation choice and the current plan. The choice cards now also foreground participant counts, waiting lists, total running time and spare time; the tools and filmed workflow are unchanged. Its stale-export segment reproduces the exact response from a separately received live local HTTP check, labelled as such. English captions and locally generated Kokoro narration accompany actual browser capture.
 
 The [earlier one-minute walkthrough](https://youtu.be/iNJlMGLmAwU) preserves the previous memory interface: choose a lease, correct it and inspect both versions. It predates the workshop planner and current design; it remains historical evidence.
+
+## Try it online
+
+[Open the functional synthetic demo](https://yannabadie-mnemo-review-before-acting.hf.space/?lang=en). No account, model key or paid inference is needed. Choose **Prepare a workshop**, then **Change room: 6 seats** and compare the two consequences before choosing. The original plan no longer fits all twelve people; the choices accommodate everyone in 105 minutes, or six people with six on the waiting list in 45 minutes.
+
+The [Hugging Face Space](https://huggingface.co/spaces/yannabadie/mnemo-review-before-acting) runs the real Python MCP service on CPU Basic, independently of the author's Mac. It uses the existing account's plan and the hardware with no hourly charge. Its public source and Dockerfile identify the pinned GitHub commit. The free hardware can sleep after inactivity; if necessary, open the Space page and allow it to start before opening the app. This is a current working deployment, not an uptime guarantee. Per-connection stores contain fictional examples and expire; do not enter personal information.
+
+The [original Mac tunnel](https://starting-teenage-cingular-tion.trycloudflare.com/?lang=en) is a secondary access route. The local instructions below remain a reproducible fallback if a hosted service is unavailable.
 
 ## Try it locally
 
@@ -36,13 +44,15 @@ The exported file is a snapshot, current at the server check instant. An already
 
 Versioned memory, source metadata and scheduling are established ideas. The contribution tested here is an application-level action boundary: a prepared plan is not permission to export it indefinitely. A local comparison first reads the correct version and hash, then changes the brief from a second connection before export. A client rendering its cached preview still produces the old plan; the official MCP export refuses that same old receipt. Unchanged and freshly replanned controls export successfully. This compares two policies on this application, not Alexa+, Mem0 or Zep, and does not establish worldwide novelty or a customer benefit in the field.
 
+A [second, stronger local comparison](comparisons/README.md) gives an independently implemented deterministic tool the same data, choices and correct version/hash check at export. Both solutions tied all five conditions: unchanged brief, split groups, waiting list, impossible window and a change after a successful current read. No functional advantage was measured. Mnemo must therefore justify its specialized MCP experience and explanation for recurring organizers; user time savings, demand and superiority to an actual assistant remain unmeasured.
+
 ### Storage modes
 
 - **Local durable mode:** `python server.py --db mnemo.db` binds to loopback by default. The local store persists after reconnecting and restarting. It is a trusted local development service, not a multi-user authentication system. The browser must make its storage mode clear and must not overwrite a durable store with the sample scenario.
 - **Isolated demonstration:** `python server.py --demo` uses a separate temporary store for each MCP session. A new demo begins empty; this temporary mode is for synthetic examples.
 - **Public demonstration:** `python server.py --public --public-origin https://YOUR-EXACT-DEMO-HOST` requires the exact HTTPS origin. Host and Origin validation remain enabled. Public sessions are isolated temporary demonstrations, not storage for personal data. Start the tunnel separately and keep the configured origin aligned with the actual host.
 
-The quick tunnel used during submission is temporary. The repository, video and local commands are the reproducible fallback. No future uptime is promised.
+The Space is independent of the Mac, while the secondary quick tunnel is temporary. Hosted hardware may sleep or restart; both public deployments use temporary sessions. The repository, video and local commands are the reproducible fallback. No future uptime is promised.
 
 ## Tools
 
