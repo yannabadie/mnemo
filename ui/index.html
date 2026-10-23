@@ -1,507 +1,449 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="fr">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mnemo — Long-term memory for Alexa+ (MCP)</title>
+<meta name="theme-color" content="#eff4f8">
+<meta name="color-scheme" content="light">
+<title>Mnemo — Préparer un atelier, garder le contexte</title>
 <style>
-  :root{
-    --bg:#0b0f14; --panel:#111820; --panel2:#0e141b; --line:#1e2a36;
-    --txt:#e8eef4; --dim:#8aa0b4; --cyan:#31c8ff; --cyan2:#00a8e0;
-    --ok:#3ddc84; --warn:#ffb454; --err:#ff5f6d; --sup:#5a6b7c;
-  }
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{background:var(--bg);color:var(--txt);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden}
-  header{display:flex;align-items:center;gap:14px;padding:10px 18px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#0d131a,#0b0f14)}
-  .ring{width:34px;height:34px;border-radius:50%;border:3px solid #12333f;position:relative;flex:none}
-  .ring::after{content:"";position:absolute;inset:-3px;border-radius:50%;border:3px solid transparent;border-top-color:var(--cyan);opacity:0;transition:opacity .2s}
-  .ring.thinking::after{opacity:1;animation:spin 1s linear infinite}
-  @keyframes spin{to{transform:rotate(360deg)}}
-  header h1{font-size:16px;font-weight:600;letter-spacing:.3px}
-  header .sub{color:var(--dim);font-size:12px}
-  .badge{margin-left:auto;background:#0e2733;color:var(--cyan);border:1px solid #14404f;border-radius:99px;padding:3px 10px;font-size:11px;font-weight:600}
-  main{flex:1;display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:0;min-height:0}
-  /* chat */
-  #chat{display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--line)}
-  #log{flex:1;overflow-y:auto;padding:18px;display:flex;flex-direction:column;gap:12px}
-  .msg{max-width:78%;padding:10px 14px;border-radius:16px;white-space:pre-wrap}
-  .msg.user{align-self:flex-end;background:#123a4d;border-bottom-right-radius:4px}
-  .msg.alexa{align-self:flex-start;background:var(--panel);border:1px solid var(--line);border-bottom-left-radius:4px}
-  .msg .meta{display:block;margin-top:6px;font-size:11px;color:var(--dim)}
-  .msg .tools{display:inline-block;margin-top:6px;font-size:11px;color:var(--cyan);background:#0b2836;border-radius:6px;padding:2px 8px}
-  #composer{display:flex;gap:10px;padding:12px 18px;border-top:1px solid var(--line);background:var(--panel2)}
-  #composer input{flex:1;background:#0b1118;border:1px solid var(--line);color:var(--txt);border-radius:10px;padding:10px 14px;font-size:14px;outline:none}
-  #composer input:focus{border-color:var(--cyan2)}
-  button{cursor:pointer;border:none;border-radius:10px;font-weight:600;font-size:13px;padding:10px 16px}
-  #send{background:var(--cyan2);color:#001522}
-  #demo{background:#153024;color:var(--ok);margin-right:0}
-  #voice,#new-session{background:#1a2340;color:#9db4ff}
-  button:disabled{opacity:.45;cursor:default}
-  .choices{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-  .choice,.edit-memory{background:#123a4d;color:var(--cyan);font-size:11px;padding:6px 9px;margin-top:5px}
-  .error{color:var(--err)}
-  #pager{display:flex;align-items:center;justify-content:space-between;gap:5px;padding:6px 10px;font-size:11px}
-  #pager button{background:#153044;color:var(--cyan);padding:5px 9px}
-  @media(max-width:850px){main{grid-template-columns:1fr}#side{max-height:40vh}#composer{flex-wrap:wrap}#composer input{min-width:180px}.msg{max-width:95%}}
-  /* right */
-  #side{display:flex;flex-direction:column;min-height:0;background:var(--panel2)}
-  #side h2{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);padding:10px 14px;border-bottom:1px solid var(--line)}
-  #proto{height:46%;overflow-y:auto;font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;padding:8px}
-  .frame{border-left:3px solid var(--line);padding:6px 8px;margin-bottom:6px;background:#0c1218;border-radius:0 6px 6px 0;word-break:break-all}
-  .frame.req{border-color:var(--cyan)}
-  .frame.res{border-color:var(--ok)}
-  .frame.err{border-color:var(--err)}
-  .frame b{color:var(--cyan);display:block;font-size:10px;margin-bottom:3px}
-  #mems{flex:1;overflow-y:auto;padding:10px}
-  .mem{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px}
-  .mem .t{font-weight:600;display:flex;align-items:center;gap:8px}
-  .ver{font-size:10px;background:#0e2733;color:var(--cyan);border-radius:5px;padding:1px 6px}
-  .ver.sup{background:#232a31;color:var(--sup);text-decoration:line-through}
-  .mem .c{color:var(--dim);font-size:12px;margin-top:4px}
-  .mem .src{font-size:10px;color:#5f7383;margin-top:5px}
-  .mem.superseded{opacity:.55}
-  .mem.superseded .c{text-decoration:line-through}
-  .hint{color:var(--dim);font-size:11px;padding:6px 14px;border-top:1px solid var(--line)}
-  #status{font-size:11px;padding:4px 14px;color:var(--dim)}
-  #status.on{color:var(--ok)}
+:root{--bg:#eff4f8;--paper:#fff;--ink:#193349;--muted:#536a7c;--blue:#215b93;--blue-dark:#174773;--teal:#20736b;--line:#d4e0e9;--wash:#e7f0f7;--error:#a12f3c;--warning:#78551e}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:24px}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "Avenir Next","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit}button,summary{touch-action:manipulation;cursor:pointer}
+button,a,input,textarea,select,summary{-webkit-tap-highlight-color:rgba(33,91,147,.15)}
+button{border:0;border-radius:9px;background:var(--blue);color:white;padding:11px 17px;font-size:.9rem;font-weight:650;transition:background-color .16s,border-color .16s,color .16s}
+button:hover:not(:disabled){background:var(--blue-dark)}button:disabled{opacity:.45;cursor:not-allowed}
+button.secondary{background:white;border:1px solid #b8cddd;color:var(--blue-dark)}
+button.secondary:hover:not(:disabled){background:var(--wash);border-color:var(--blue)}
+button.quiet{background:transparent;color:var(--blue);padding:6px 8px}button.quiet:hover:not(:disabled){background:var(--wash)}
+button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid #5691c0;outline-offset:4px}
+a{color:var(--blue);text-underline-offset:3px}[hidden]{display:none!important}
+.shell{width:min(1210px,calc(100% - 64px));margin-inline:auto}.skip{position:absolute;top:-70px;left:16px;padding:10px;background:white;z-index:5}.skip:focus{top:8px}
+header{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:22px 0;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:12px;color:var(--ink);text-decoration:none;font-size:1.45rem;font-weight:750;letter-spacing:-.04em}
+.mark{width:28px;height:30px;border-left:3px solid var(--blue);border-bottom:3px solid var(--blue);border-radius:0 0 0 6px;position:relative;transform:skewY(-5deg)}
+.mark::before,.mark::after{content:"";position:absolute;width:18px;height:16px;border-top:2px solid var(--blue);border-right:2px solid var(--blue);border-radius:0 5px 0 0;right:0;top:1px}.mark::after{top:8px;right:6px;opacity:.5}
+.header-tools{display:flex;gap:20px;align-items:center}.connection{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:.79rem}
+.connection::before{content:"";height:7px;width:7px;border-radius:50%;background:#91a8ba}.connection[data-state="connected"]::before{background:var(--teal)}.connection[data-state="error"]::before,.connection[data-state="ended"]::before{background:var(--error)}
+select{border:1px solid var(--line);border-radius:7px;padding:6px 9px;background:white;color:var(--ink);font-size:.83rem}
+.intro{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:40px;align-items:end;padding:45px 0 29px}
+h1{font-size:clamp(2rem,3.5vw,3.15rem);line-height:1.14;letter-spacing:-.045em;font-weight:650;margin:0 0 16px;max-width:24ch;text-wrap:balance}
+.intro p{max-width:65ch;font-size:1.02rem;color:var(--muted);margin:0}.entry{display:flex;flex-direction:column;gap:10px;max-width:270px;padding-bottom:3px}
+.entry button{border-radius:12px;padding:16px 24px;text-align:left;box-shadow:0 5px 0 #d6e3ee}.entry small{font-size:.76rem;color:var(--muted)}
+.session-note{display:flex;gap:12px;align-items:start;border-top:1px solid var(--line);padding:13px 0 20px;color:var(--muted);font-size:.8rem}.session-note strong{white-space:nowrap;color:var(--blue-dark);font-weight:650}
+.feedback{min-height:43px;margin:0 0 16px;padding:10px 14px;border-left:3px solid #a7bdcf;border-radius:0 7px 7px 0;background:#f8fbfd;font-size:.88rem;overflow-wrap:anywhere}
+.feedback.success{border-color:var(--teal);color:#205c56;background:#e7f3ef}.feedback.warning{border-color:#a9854e;color:var(--warning);background:#fff9ee}.feedback.error{border-color:var(--error);color:var(--error);background:#fff3f4}
+.activity{display:flex;align-items:center;gap:9px;font-size:.79rem;color:var(--muted);margin:0 0 12px}.spinner{width:13px;height:13px;border:2px solid #bad0df;border-top-color:var(--blue);border-radius:50%;animation:spin .9s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+.workspace{display:grid;grid-template-columns:minmax(250px,.7fr) minmax(0,1.7fr);gap:25px;align-items:start;padding-bottom:32px}
+.brief-panel{padding:22px 23px;border-top:3px solid #a6bfd3;background:#e7eef5;border-radius:2px 2px 12px 12px}
+h2{font-size:1.14rem;line-height:1.35;letter-spacing:-.02em;margin:0 0 13px;font-weight:650;text-wrap:balance;scroll-margin-top:24px}h3{font-size:.98rem;line-height:1.35;font-weight:650;margin:0 0 12px}
+.brief-name{font-size:.87rem;font-weight:650;margin:0 0 15px;overflow-wrap:anywhere}.brief-list{margin:0}.brief-list div{display:flex;justify-content:space-between;gap:16px;padding:9px 0;border-bottom:1px solid #cbdbe7;font-size:.82rem}.brief-list dt{color:var(--muted)}.brief-list dd{margin:0;font-weight:650;text-align:right;font-variant-numeric:tabular-nums}
+.brief-foot{font-size:.74rem;color:var(--muted);margin:15px 0 0}.brief-controls{display:flex;flex-wrap:wrap;gap:7px;margin-top:16px}.brief-controls button{font-size:.77rem;padding:7px 10px}
+.plan-panel{min-width:0}.plan-sheet{border:1px solid #cbdce8;background:white;border-radius:18px;overflow:hidden;box-shadow:0 15px 35px -26px #6c879d}
+.sheet-head{padding:24px 27px 18px;display:flex;align-items:start;justify-content:space-between;gap:20px}.sheet-head h2{font-size:1.33rem;margin:0;overflow-wrap:anywhere}.sheet-head p{font-size:.8rem;color:var(--muted);margin:7px 0 0}
+.badge{font-size:.72rem;background:var(--wash);color:var(--blue);padding:5px 9px;border-radius:6px;white-space:nowrap}.badge.ready{background:#e5f2ee;color:var(--teal)}.badge.obsolete{background:#fff4e5;color:var(--warning)}
+.plan-body{padding:0 27px 25px}.plan-lead{font:1.36rem/1.45 "Iowan Old Style",Georgia,serif;margin:0 0 20px;max-width:45ch;overflow-wrap:anywhere}
+.preview-comparison{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.preview-half{padding:21px 27px;background:#f3f6f8}.preview-half+div{border-left:1px solid var(--line);background:#edf5fb}.preview-half p{margin:0;color:var(--muted);font-size:.77rem}.preview-half strong{display:block;font:1.5rem/1.4 "Iowan Old Style",Georgia,serif;margin-top:8px;color:var(--ink)}
+.preview-caption{font-size:.8rem;color:var(--muted);margin:0;padding:20px 27px 24px;max-width:73ch}
+.schedule{width:100%;border-collapse:collapse;font-size:.86rem;margin:18px 0}.schedule th{text-align:left;font-size:.75rem;color:var(--muted);font-weight:500;padding:0 0 9px}.schedule td{padding:13px 8px 13px 0;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}.schedule td:first-child{font-weight:650;color:var(--blue-dark)}
+.plan-summary{display:flex;gap:22px;flex-wrap:wrap;color:var(--muted);font-size:.8rem;margin-top:17px}.plan-summary strong{color:var(--ink);font-weight:650}
+.checklist{list-style:none;margin:18px 0 0;padding:0;display:grid;gap:9px}.checklist li{position:relative;padding-left:24px;font-size:.84rem;overflow-wrap:anywhere}.checklist li::before{content:"";position:absolute;top:5px;left:0;width:11px;height:11px;border:1px solid #a9c0d0;border-radius:3px}
+.plan-actions{display:flex;gap:10px;flex-wrap:wrap;padding-top:21px;border-top:1px solid var(--line);margin-top:24px}.export-note{font-size:.73rem;color:var(--muted);margin:10px 0 0}
+.decision-intro{font-size:.88rem;margin:0 0 17px;color:var(--muted)}.decisions{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+.decision{padding:17px;border:1px solid #b8cede;border-radius:10px;background:#f5f9fc;min-width:0}.decision h3{font-size:.95rem;margin-bottom:7px}.decision p{font-size:.8rem;color:var(--muted);margin:0 0 13px;overflow-wrap:anywhere}.decision button{font-size:.79rem}.decision .unavailable{color:var(--error);font-size:.76rem}
+.old-plan{border-top:1px solid var(--line);padding:13px 27px;background:#faf6ef;color:var(--warning);font-size:.79rem}.old-plan summary{padding:0;font-weight:650}.old-plan p{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.76rem;margin:10px 0}
+.provenance{border-top:1px solid var(--line)}.provenance summary{padding:14px 27px;font-size:.79rem;color:var(--muted)}.provenance .details-body{padding:0 27px 18px;font-size:.75rem;color:var(--muted);overflow-wrap:anywhere}.details-body p{margin:7px 0}.details-body code{font-size:.72rem}
+.panel-note{padding:15px 27px;background:#f5f9fc;border-top:1px solid var(--line);font-size:.78rem;color:var(--muted)}
+.editor{background:white;border:1px solid var(--line);border-radius:12px;padding:22px;margin-top:20px}.editor-context{font-size:.8rem;color:var(--muted);margin:0 0 17px}
+.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 14px}.field{margin-bottom:15px;min-width:0}.field.wide{grid-column:1/-1}.field label{display:block;font-size:.79rem;font-weight:650;margin-bottom:5px}
+input,textarea{width:100%;border:1px solid #bfcfdb;border-radius:7px;padding:9px 10px;background:white;color:var(--ink);font-size:.88rem;line-height:1.5;resize:vertical}input:hover,textarea:hover{border-color:#87a8c0}input::placeholder,textarea::placeholder{color:#728797}
+input[aria-invalid="true"],textarea[aria-invalid="true"]{border-color:var(--error)}.field-help{display:block;font-size:.74rem;color:var(--muted);margin-top:6px}.field-error{display:block;font-size:.77rem;color:var(--error);margin-top:5px}.form-actions{display:flex;gap:9px;flex-wrap:wrap}
+.secondary-section{border-top:1px solid var(--line);margin-top:5px}.secondary-section>summary{padding:19px 0;font-size:.92rem;font-weight:650;color:var(--blue-dark)}.manual-grid{display:grid;grid-template-columns:1fr 1.4fr;gap:26px;padding:5px 0 26px}.manual-form{background:white;border:1px solid var(--line);border-radius:12px;padding:22px}
+.search-bar{display:flex;gap:8px;align-items:end;margin-bottom:17px}.search-bar .field{flex:1;margin:0}.search-bar button{padding:10px 13px;font-size:.8rem}
+.inventory{display:grid;gap:9px}.memory-card{display:block;width:100%;text-align:left;background:white;color:var(--ink);border:1px solid var(--line);padding:13px 15px;border-radius:9px}.memory-card:hover:not(:disabled){color:var(--ink);background:var(--wash);border-color:#9db9cf}.memory-card strong{display:block;font-size:.85rem;overflow-wrap:anywhere}.memory-card span{display:block;font-size:.77rem;margin-top:5px;color:var(--muted);overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.empty{font-size:.84rem;color:var(--muted);margin:8px 0 15px}.pager{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:.73rem;color:var(--muted);margin-top:13px}.pager button{font-size:.73rem;padding:5px 7px}
+.memory-detail{background:white;border:1px solid var(--line);border-radius:12px;padding:20px;margin-top:16px}.memory-detail p{font-size:.83rem;white-space:pre-wrap;overflow-wrap:anywhere}.memory-detail .metadata{font-size:.73rem;color:var(--muted)}.memory-detail .memory-text{font:1.08rem/1.5 "Iowan Old Style",Georgia,serif}.memory-detail button{font-size:.79rem;padding:8px 11px}
+.history-list{list-style:none;margin:14px 0 0;padding:0}.history-list li{border-left:2px solid #cbdeeb;padding:0 0 13px 15px}.history-list li:last-child{border-color:transparent}.history-list .metadata{margin:0 0 5px}.history-list p{margin:0 0 8px}
+.technical{border-top:1px solid var(--line)}.technical>summary{padding:16px 0;font-size:.8rem;color:var(--muted)}.technical-intro{font-size:.79rem;color:var(--muted);max-width:90ch;margin:0 0 15px}.technical-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;padding-bottom:22px}
+.protocol-log,.action-log{max-height:260px;overflow:auto;overscroll-behavior:contain;border:1px solid var(--line);border-radius:8px;background:#f7fafc;padding:10px;font-size:.72rem;overflow-wrap:anywhere}.frame{padding:7px 0;border-bottom:1px solid var(--line)}.frame:last-child{border:0}.frame b{display:block;color:var(--blue);margin-bottom:4px}.frame.err b{color:var(--error)}.frame pre{white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;margin:0}.action-log p{margin:0;padding:6px 0;border-bottom:1px solid var(--line)}.technical-controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}.technical-controls button{font-size:.76rem;padding:8px 11px}
+footer{padding:21px 0 29px;border-top:1px solid var(--line);font-size:.74rem;color:var(--muted);display:flex;justify-content:space-between;gap:25px}footer p{margin:0;max-width:95ch}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+@media(max-width:950px){.intro{grid-template-columns:1fr;gap:22px}.entry{max-width:none;align-items:start}.workspace{grid-template-columns:minmax(225px,.8fr) minmax(0,1.4fr);gap:18px}.decisions{grid-template-columns:1fr}.sheet-head,.plan-body{padding-inline:22px}}
+@media(max-width:700px){.shell{width:calc(100% - 32px)}header{padding-block:16px}.header-tools{gap:10px}.brand{font-size:1.24rem}.connection{font-size:.7rem;max-width:95px;line-height:1.3}.intro{padding-top:30px}h1{font-size:2.1rem}.intro p{font-size:.94rem}.session-note{flex-wrap:wrap;gap:6px}.workspace,.manual-grid,.technical-grid{grid-template-columns:1fr}.brief-panel{padding:19px 21px}.brief-list{display:grid;grid-template-columns:1fr 1fr;gap:0 19px}.brief-list div{font-size:.76rem;gap:8px}.sheet-head{gap:10px}.sheet-head h2{font-size:1.19rem}.preview-half{padding:18px 21px}.preview-half strong{font-size:1.28rem}.plan-actions button{flex:1}.form-grid{gap:0 12px}.plan-lead{font-size:1.25rem}.manual-grid{gap:19px}footer{flex-direction:column;gap:8px}.preview-caption,.old-plan,.provenance summary,.provenance .details-body,.panel-note{padding-inline:22px}}
+@media(max-width:420px){h1{font-size:1.9rem}.brand{gap:9px}.header-tools{gap:7px}select{padding:5px}.brief-list{grid-template-columns:1fr}.preview-comparison{grid-template-columns:1fr}.preview-half+div{border-left:0;border-top:1px solid var(--line)}.plan-actions button{flex-basis:100%}.form-grid{grid-template-columns:1fr}.field.wide{grid-column:auto}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
-<header>
-  <div class="ring" id="ring"></div>
-  <div>
-    <h1>Alexa+ &nbsp;·&nbsp; <span style="color:var(--cyan)">Mnemo</span> memory</h1>
-    <div class="sub">simulated Alexa+ experience · talks to a real MCP server (Streamable HTTP)</div>
-  </div>
-  <div class="badge" id="proto-badge">MCP …</div>
-</header>
-<main>
-  <section id="chat">
-    <div id="log"></div>
-    <div id="composer">
-      <button id="demo" title="Start a fresh session with made-up data">▶ Synthetic demo</button>
-      <button id="voice" aria-pressed="false" title="Optional local browser response">🔈 Voice off</button>
-      <button id="new-session" title="End only this demo session and start an empty one">New demo</button>
-      <input id="inp" placeholder="e.g. “Remember that my lease is 24 months” / “What about my lease?” / “Actually, it's 18 months”" autocomplete="off" maxlength="1200" aria-label="Message to the Mnemo simulator">
-      <button id="send">Send</button>
-    </div>
-    <div class="hint">Synthetic session only · deterministic, no LLM or keys · “remember …” adds a declared source · corrections require your choice · refresh starts a new session · optional installed local English voice.</div>
-  </section>
-  <aside id="side">
-    <h2>MCP protocol — live</h2>
-    <div id="proto"></div>
-    <h2>Memory — versioned</h2>
-    <div id="mems"><div class="mem"><div class="c">Empty. Ask Alexa to remember something, or run the demo.</div></div></div>
-    <div id="pager"><button id="prev-page" disabled>Previous</button><span id="page-label">0 memories</span><button id="next-page" data-offset="" disabled>Next</button></div>
-    <div id="status">connecting…</div>
-  </aside>
-</main>
+<a class="skip" href="#main" data-i18n="skip">Aller au contenu</a>
+<div class="shell">
+<header><a href="#main" class="brand" aria-label="Mnemo"><span class="mark" aria-hidden="true"></span><span translate="no">Mnemo</span></a><div class="header-tools"><span class="connection" id="connection" data-state="connecting" role="status">Connexion…</span><label class="sr-only" for="language" data-i18n="language">Langue</label><select id="language" name="language" autocomplete="off"><option value="fr" lang="fr">Français</option><option value="en" lang="en">English</option></select></div></header>
+<main id="main">
+<section class="intro" aria-labelledby="headline"><div><h1 id="headline" data-i18n="headline">Un fait change ? Revoyez la décision avant d’agir.</h1><p data-i18n="intro">Dans cet exemple, le plan d’un atelier reste lié au brief qui l’a produit. Au téléchargement, le serveur refuse de livrer une fiche si ce brief a changé.</p></div><div class="entry"><button id="prepare-example" data-i18n="prepareExample">Préparer un atelier</button><small data-i18n="exampleNote">Exemple fictif, sans compte.</small></div></section>
+<div class="session-note"><strong id="mode-label" data-i18n="synthetic">Démo synthétique</strong><span id="mode-note" data-i18n="sessionNote">Les données sont inventées, isolées et temporaires. Recharger la page ouvre une nouvelle session vide.</span></div>
+<div class="feedback" id="feedback" role="status" aria-live="polite" aria-atomic="true" data-i18n="welcome">Lancez l’exemple pour recevoir un vrai plan calculé à partir du brief.</div>
+<div id="reconnect-row" style="margin:-4px 0 17px" hidden><button id="reconnect-now" class="secondary" data-i18n="reconnect">Reconnecter</button></div>
+<div class="activity" id="activity" role="status" aria-live="polite" hidden><span class="spinner" aria-hidden="true"></span><span id="activity-text"></span></div>
+<div class="workspace">
+<aside class="brief-panel" aria-labelledby="brief-heading"><h2 id="brief-heading" data-i18n="briefHeading">Le brief de l’atelier</h2><div id="brief-summary"></div><div class="brief-controls"><button id="edit-brief" class="secondary" data-i18n="editBrief" disabled>Modifier le brief</button><button id="refresh-brief" class="quiet" data-i18n="refreshBrief" disabled>Relire la version actuelle</button></div></aside>
+<section class="plan-panel" aria-labelledby="plan-heading"><article class="plan-sheet"><div id="plan-result"></div><div id="plan-provenance"></div></article></section>
+</div>
+<section class="editor" id="brief-editor" aria-labelledby="brief-editor-heading" hidden><h2 id="brief-editor-heading" data-i18n="editBriefHeading">Modifier les contraintes de l’atelier</h2><p class="editor-context" id="brief-editor-context"></p><form id="brief-form" novalidate><div class="form-grid">
+<div class="field wide"><label for="brief-title" data-i18n="workshopTitle">Nom de l’atelier</label><input id="brief-title" name="brief_title" autocomplete="off" maxlength="160" aria-describedby="brief-error"></div>
+<div class="field"><label for="brief-participants" data-i18n="participants">Participants</label><input id="brief-participants" name="brief_participants" type="number" min="1" max="500" inputmode="numeric" autocomplete="off"></div>
+<div class="field"><label for="brief-capacity" data-i18n="capacity">Places dans la salle</label><input id="brief-capacity" name="brief_capacity" type="number" min="1" max="500" inputmode="numeric" autocomplete="off"></div>
+<div class="field"><label for="brief-date" data-i18n="eventDate">Date de l’atelier</label><input id="brief-date" name="brief_date" type="date" autocomplete="off"></div>
+<div class="field"><label for="brief-timezone" data-i18n="timezone">Fuseau horaire</label><input id="brief-timezone" name="brief_timezone" value="Europe/Paris" autocomplete="off" readonly spellcheck="false"></div>
+<div class="field"><label for="brief-start" data-i18n="startTime">Début disponible</label><input id="brief-start" name="brief_start" type="time" autocomplete="off"></div>
+<div class="field"><label for="brief-end" data-i18n="endTime">Fin disponible</label><input id="brief-end" name="brief_end" type="time" autocomplete="off"></div>
+<div class="field"><label for="brief-duration" data-i18n="sessionMinutes">Séance (minutes)</label><input id="brief-duration" name="brief_session_minutes" type="number" min="1" max="480" inputmode="numeric" autocomplete="off"></div>
+<div class="field"><label for="brief-transition" data-i18n="transitionMinutes">Transition (minutes)</label><input id="brief-transition" name="brief_transition_minutes" type="number" min="0" max="120" inputmode="numeric" autocomplete="off"></div>
+<div class="field wide"><label for="brief-source" data-i18n="changeSource">Source déclarée du changement</label><textarea id="brief-source" name="brief_source" rows="2" maxlength="1200" autocomplete="off" data-placeholder="sourcePlaceholder" placeholder="Ex. nouvelle note fictive de Léa…"></textarea><small class="field-help" data-i18n="sourceHelp">Une source par ligne. Une déclaration conservée ne prouve pas le contenu du document.</small></div></div>
+<p class="field-error" id="brief-error" role="status" aria-live="polite"></p><div class="form-actions"><button id="save-brief" type="submit" data-i18n="saveBrief">Enregistrer ce brief et recalculer</button><button id="cancel-brief" class="secondary" type="button" data-i18n="cancel">Annuler</button><button id="review-edit-version" class="secondary" type="button" data-i18n="reviewVersion" hidden>Choisir la version actuelle</button></div></form></section>
+<details class="secondary-section" id="manual"><summary data-i18n="manualSummary">Explorer les faits et leur historique</summary><div class="manual-grid">
+<section class="manual-form"><h2 data-i18n="addHeading">Enregistrer un autre fait</h2><form id="fact-form" novalidate>
+<div class="field"><label for="fact-title" data-i18n="subject">Sujet</label><input id="fact-title" name="fact_title" autocomplete="off" maxlength="120" data-placeholder="subjectPlaceholder" placeholder="Ex. matériel à prévoir…" aria-describedby="fact-title-error"><span class="field-error" id="fact-title-error"></span></div>
+<div class="field"><label for="fact-content" data-i18n="fact">Fait à retenir</label><textarea id="fact-content" name="fact_content" rows="3" maxlength="4000" autocomplete="off" data-placeholder="factPlaceholder" placeholder="Ex. prévoir un tableau blanc…" aria-describedby="fact-content-error"></textarea><span class="field-error" id="fact-content-error"></span></div>
+<div class="field"><label for="fact-source" data-i18n="declaredSource">Source déclarée</label><textarea id="fact-source" name="fact_source" rows="2" maxlength="1200" autocomplete="off" data-placeholder="sourcePlaceholder" placeholder="Ex. note fictive de Léa…" aria-describedby="fact-source-error"></textarea><span class="field-error" id="fact-source-error"></span><small class="field-help" data-i18n="sourceHelp">Une source par ligne. Une déclaration conservée ne prouve pas le contenu du document.</small></div><button id="save-fact" type="submit" data-i18n="saveFact">Enregistrer ce fait</button></form></section>
+<section><form id="search-form" class="search-bar" novalidate><div class="field"><label for="search-query" data-i18n="keywords">Rechercher par mots-clés</label><input id="search-query" name="search_query" autocomplete="off" maxlength="300" data-placeholder="searchPlaceholder" placeholder="Ex. matériel…" aria-describedby="search-error"></div><button id="search-facts" type="submit" data-i18n="search">Rechercher</button></form><p class="field-error" id="search-error"></p><p class="empty" id="search-note" data-i18n="searchNote">La recherche porte sur les faits actuels. Pour lire une ancienne version, choisissez une mémoire puis ouvrez son historique.</p><div class="inventory" id="mems"></div><div class="pager" id="pager" hidden><button id="prev-page" class="quiet" data-i18n="previous">Précédent</button><span id="page-label"></span><button id="next-page" class="quiet" data-offset="" data-i18n="next">Suivant</button></div><div class="memory-detail" id="memory-detail" hidden></div>
+<section class="editor" id="fact-editor" hidden><h3 data-i18n="correctFactHeading">Corriger la mémoire choisie</h3><p class="editor-context" id="fact-edit-context"></p><form id="fact-correction-form" novalidate><div class="field"><label for="fact-replacement" data-i18n="replacement">Nouveau fait complet</label><textarea id="fact-replacement" name="fact_replacement" rows="3" maxlength="4000" autocomplete="off"></textarea></div><div class="field"><label for="fact-correction-source" data-i18n="changeSource">Source déclarée du changement</label><textarea id="fact-correction-source" name="fact_correction_source" rows="2" maxlength="1200" autocomplete="off"></textarea></div><p class="field-error" id="fact-correction-error" role="status" aria-live="polite"></p><div class="form-actions"><button id="save-fact-correction" type="submit" data-i18n="saveNewVersion">Enregistrer la nouvelle version</button><button id="cancel-fact-correction" type="button" class="secondary" data-i18n="cancel">Annuler</button></div></form></section>
+</section></div></details>
+<details class="technical" id="technical"><summary data-i18n="technical">Connexion et vrais échanges MCP</summary><p class="technical-intro" data-i18n="technicalIntro">prepare_workshop prépare un aperçu et un reçu de plan. export_workshop vérifie côté serveur la version courante avant de produire la fiche. Ces reçus sont propres à la connexion et temporaires, même si les faits sont durables. Aucun modèle de langage ni appareil Alexa+ n’est connecté.</p><div class="technical-grid"><section><h3 id="proto-badge" translate="no">MCP</h3><div class="protocol-log" id="proto"></div></section><section><h3 data-i18n="actionLog">Journal des actions</h3><div class="action-log" id="log"></div><div class="technical-controls"><button id="refresh" class="secondary" data-i18n="refresh">Actualiser les mémoires</button><button id="new-session" class="secondary" data-i18n="newSession">Nouvelle session</button><button id="voice" class="quiet" aria-pressed="false" data-i18n="voiceOff">Voix désactivée</button></div></section></div></details>
+</main><footer><p data-i18n="footer">Les sources sont déclaratives. Les corrections conservent les versions précédentes. La session publique expire après 30 minutes d’inactivité ou l’arrêt du serveur ; le tunnel reste temporaire.</p><span translate="no">Mnemo</span></footer>
+</div>
 <script>
 "use strict";
-const $ = id => document.getElementById(id);
-const log = $("log"), proto = $("proto"), memsBox = $("mems"), ring = $("ring");
-let session = null, protocol = null, nextId = 1, busy = false;
-let storageMode = null;
-let memoryOffset = 0, pendingAction = null, lastCreatedMemory = null;
-let choiceSequence = 0, voiceOn = false;
-const pageSize = 20, choiceTargets = new Map(), inventory = new Map();
-
-function escapeHtml(value){
-  return String(value ?? "").replace(/[&<>"']/g,
-    c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+const $=id=>document.getElementById(id);
+const COPY={
+fr:{
+skip:"Aller au contenu",language:"Langue",connecting:"Connexion…",connected:"Mémoire connectée",connectionError:"Connexion indisponible",sessionEnded:"Session terminée",
+headline:"Un fait change ? Revoyez la décision avant d’agir.",intro:"Dans cet exemple, le plan d’un atelier reste lié au brief qui l’a produit. Au téléchargement, le serveur refuse de livrer une fiche si ce brief a changé.",
+prepareExample:"Préparer un atelier",exampleNote:"Exemple fictif, sans compte.",synthetic:"Démo synthétique",sessionNote:"Les données sont inventées, isolées et temporaires. Recharger la page ouvre une nouvelle session vide.",
+durable:"Mémoire locale durable",durableNote:"Cette mémoire conserve les faits après reconnexion. L’exemple automatique est désactivé pour préserver ce contenu.",welcome:"Lancez l’exemple pour recevoir un vrai plan calculé à partir du brief.",
+briefHeading:"Le brief de l’atelier",editBrief:"Modifier le brief",refreshBrief:"Relire la version actuelle",workshopTitle:"Nom de l’atelier",participants:"Participants",capacity:"Places dans la salle",eventDate:"Date de l’atelier",timezone:"Fuseau horaire",startTime:"Début disponible",endTime:"Fin disponible",sessionMinutes:"Séance (minutes)",transitionMinutes:"Transition (minutes)",changeSource:"Source déclarée du changement",sourcePlaceholder:"Ex. note fictive de Léa…",sourceHelp:"Une source par ligne. Une déclaration conservée ne prouve pas le contenu du document.",
+editBriefHeading:"Modifier les contraintes de l’atelier",saveBrief:"Enregistrer ce brief et recalculer",cancel:"Annuler",reviewVersion:"Choisir la version actuelle",
+manualSummary:"Explorer les faits et leur historique",addHeading:"Enregistrer un autre fait",subject:"Sujet",fact:"Fait à retenir",declaredSource:"Source déclarée",subjectPlaceholder:"Ex. matériel à prévoir…",factPlaceholder:"Ex. prévoir un tableau blanc…",saveFact:"Enregistrer ce fait",keywords:"Rechercher par mots-clés",searchPlaceholder:"Ex. matériel…",search:"Rechercher",searchNote:"La recherche porte sur les faits actuels. Pour lire une ancienne version, choisissez une mémoire puis ouvrez son historique.",
+previous:"Précédent",next:"Suivant",correctFactHeading:"Corriger la mémoire choisie",replacement:"Nouveau fait complet",saveNewVersion:"Enregistrer la nouvelle version",technical:"Connexion et vrais échanges MCP",technicalIntro:"prepare_workshop prépare un aperçu et un reçu de plan. export_workshop vérifie côté serveur la version courante avant de produire la fiche. Ces reçus sont propres à la connexion et temporaires, même si les faits sont durables. Aucun modèle de langage ni appareil Alexa+ n’est connecté.",
+actionLog:"Journal des actions",refresh:"Actualiser les mémoires",newSession:"Nouvelle session",reconnect:"Reconnecter",voiceOff:"Voix désactivée",voiceOn:"Voix activée",footer:"Les sources sont déclaratives. Les corrections conservent les versions précédentes. La session publique expire après 30 minutes d’inactivité ou l’arrêt du serveur ; le tunnel reste temporaire.",
+preview:"Aperçu fictif",previewTitle:"Un atelier, puis un imprévu.",previewBefore:"Avant le changement",previewAfter:"Après le changement",previewTwelve:"12 personnes, 12 places",previewSix:"12 personnes, 6 places",previewCaption:"Lancez l’exemple : le serveur préparera un premier plan. Un changement de salle le rendra obsolète ; vous déciderez comment vous adapter.",
+briefPreview:"Brief de l’exemple à tester",briefCurrent:"Brief enregistré, version {version}",people:"{n} personnes",seats:"{n} places",window:"Créneau disponible",duration:"Séance / transition",minutes:"{session} min / {transition} min",exampleTitle:"Atelier de cadrage",exampleSource:"synthetic:brief fictif de Léa, salle initiale",roomSource:"synthetic:note fictive de Léa, nouvelle salle de 6 places",
+ready:"Plan préparé",decision:"Décision nécessaire",blocked:"Plan impossible",obsolete:"Plan obsolète",planTitle:"Votre feuille de route",initialLead:"Le plan est calculé avec le brief courant.",readyLead:"{scheduled} {people}, {sessions} {sessionLabel}.",personScheduledOne:"personne planifiée",personScheduledMany:"personnes planifiées",sessionOne:"séance",sessionMany:"séances",decisionLead:"La nouvelle salle ne peut plus accueillir tout le monde en une seule séance. Choisissez comment adapter l’atelier.",
+group:"Groupe",time:"Horaire",scheduled:"Participants planifiés",waitlisted:"Sur liste d’attente",groupLabel:"Groupe {n}",checklist:"À préparer",download:"Télécharger le plan",downloadNote:"Fiche en anglais, produite après vérification serveur du brief courant. Les copies déjà téléchargées restent des instantanés non révocables.",changeRoom:"Changer de salle : 6 places",recalculate:"Recalculer avec ce brief",provenance:"Sur quel brief ce plan repose-t-il ?",version:"Version {n}",memoryId:"Identifiant",sourceLabel:"Sources déclarées",planOld:"Le plan précédent ne correspond plus au brief actuel.",oldPlan:"Plan précédent, obsolète (version {version})",
+splitTitle:"Garder tous les participants",limitTitle:"Garder un seul groupe",splitDescription:"{groups} groupes successifs, {participants} participants planifiés.",limitDescription:"{participants} participants planifiés ; {waitlisted} sur liste d’attente.",splitAction:"Choisir les groupes successifs",limitAction:"Choisir un groupe et une liste d’attente",notFeasible:"Ce choix ne tient pas dans le créneau disponible.",optionDuration:"{required} min nécessaires pour {available} min disponibles.",checkCapacity:"Confirmer la capacité déclarée de {capacity} places.",checkGroups:"Répartir les {participants} participants entre les groupes prévus.",checkDate:"Confirmer la date et les horaires avec les participants. Aucun message n’est envoyé par cet outil.",checkWaitlist:"Choisir et informer les {waitlisted} personnes sur liste d’attente ; l’outil ne choisit pas leur identité.",noOptions:"Aucun plan n’a été produit. Modifiez le brief pour lever la contrainte indiquée.",backendReasons:"Explication du calcul",serverLimits:"Limites du plan",
+loading:"Échange avec la mémoire…",saving:"Enregistrement du brief…",planning:"Calcul du plan…",reading:"Lecture de la version actuelle…",searching:"Recherche des mots-clés…",roomChanged:"Capacité enregistrée en version {version}. Le plan précédent est obsolète ; votre choix est nécessaire.",planReady:"Plan reçu à partir du brief version {version}. Vous pouvez le télécharger ou changer une contrainte.",needsDecision:"Le brief a changé. Choisissez une adaptation ; aucun nouveau plan exportable n’a encore été produit.",planBlocked:"Le serveur ne peut pas produire de plan compatible. Modifiez le brief.",saved:"Fait enregistré avec sa source déclarée.",corrected:"Version {version} enregistrée ; l’ancienne reste dans l’historique.",savedReadFailed:"L’écriture est confirmée, mais la lecture suivante n’a pas abouti. Actualisez les mémoires avant de renvoyer une écriture.",
+newSessionReady:"Nouvelle session synthétique, sans les mémoires précédentes.",reconnected:"Reconnexion effectuée. Les faits durables sont conservés.",refreshed:"Mémoires actualisées. Choisissez le contexte à utiliser.",currentLoaded:"Version {version} chargée. Le plan doit être recalculé si son brief a changé.",noMemories:"Aucun fait enregistré dans cette session.",noResults:"Aucun fait actuel ne contient ces mots. Essayez un mot du sujet ou affichez toutes les mémoires.",allMemories:"Toutes les mémoires",page:"{start}–{end} sur {total}",readMemory:"Lire cette mémoire",history:"Historique des versions",correctMemory:"Corriger cette mémoire",useBrief:"Utiliser ce brief pour l’atelier",current:"Actuelle",preserved:"Conservée",editContext:"Correction de « {title} », version {version}. Le choix porte sur cet identifiant et cette version.",
+stale:"Cette mémoire a changé depuis votre choix. Votre correction n’a pas été appliquée. Relisez la version actuelle, puis choisissez-la à nouveau.",planStale:"Le brief a changé depuis le calcul. Ce plan ne peut plus être téléchargé ; recalculez-le.",missingTitle:"Indiquez un sujet.",missingContent:"Écrivez le fait complet.",missingSource:"Indiquez au moins une source déclarée.",missingQuery:"Saisissez des mots-clés.",invalidBrief:"Vérifiez les champs du brief et indiquez la source du changement.",notChosen:"Choisissez d’abord une mémoire.",
+connectFailed:"La mémoire ne répond pas. Les actions sont désactivées. Utilisez « Reconnecter » dans les détails de connexion.",backendMissing:"Cette version du serveur ne possède pas encore le garde d’export. L’affichage reste un aperçu, pas un résultat livré.",modeError:"Le mode de mémoire n’a pas pu être vérifié. Aucune écriture n’est activée.",expired:"La session est terminée. Votre demande n’a pas été relancée ; ouvrez une nouvelle session.",timeout:"La réponse n’est pas arrivée à temps. Réessayez la lecture ou reconnectez-vous.",network:"La connexion a été interrompue. Vérifiez le serveur avant de continuer.",uncertain:"La réponse de l’écriture n’est pas arrivée. Elle a peut-être été effectuée. Actualisez les mémoires avant de recommencer.",reconcile:"Actualisez d’abord les mémoires pour rapprocher la dernière écriture.",protocolError:"La réponse reçue ne correspond pas à la demande. Reconnectez-vous.",errorPrefix:"L’action n’a pas abouti : {detail}",
+confirmSession:"Fermer la session temporaire et ses mémoires ? Le nouvel exemple commencera sans les reprendre.",confirmDraft:"Un formulaire contient du texte non enregistré. Abandonner ce texte ?",durableDemo:"L’exemple automatique est réservé au mode synthétique temporaire. Cette mémoire durable n’a pas été modifiée.",voiceUnavailable:"Aucune voix locale installée dans cette langue.",voiceAvailable:"Lecture facultative par une voix installée localement.",downloaded:"Fiche reçue et téléchargée pour le brief version {version}.",cancelled:"Modification annulée. Aucune mémoire n’a changé."
+},
+en:{
+skip:"Skip to content",language:"Language",connecting:"Connecting…",connected:"Memory connected",connectionError:"Connection unavailable",sessionEnded:"Session ended",
+headline:"A fact changed? Review the decision before acting.",intro:"In this example, a workshop plan stays tied to the brief that produced it. When you download it, the server refuses to deliver the file if that brief has changed.",
+prepareExample:"Prepare a workshop",exampleNote:"Fictional example. No account needed.",synthetic:"Synthetic demo",sessionNote:"The data is made up, isolated and temporary. Reloading the page opens an empty session.",
+durable:"Durable local memory",durableNote:"This local memory keeps its facts when you reconnect. The scripted example is disabled to preserve that content.",welcome:"Run the example to receive a real plan calculated from the brief.",
+briefHeading:"The workshop brief",editBrief:"Edit the brief",refreshBrief:"Read the current version",workshopTitle:"Workshop name",participants:"Participants",capacity:"Room capacity",eventDate:"Workshop date",timezone:"Time zone",startTime:"Available from",endTime:"Available until",sessionMinutes:"Session (minutes)",transitionMinutes:"Transition (minutes)",changeSource:"Declared source of the change",sourcePlaceholder:"E.g. a fictional note from Lea…",sourceHelp:"One source per line. Keeping a declaration does not verify the document.",
+editBriefHeading:"Edit the workshop constraints",saveBrief:"Save this brief and recalculate",cancel:"Cancel",reviewVersion:"Choose the current version",
+manualSummary:"Explore facts and their history",addHeading:"Save another fact",subject:"Subject",fact:"Fact to remember",declaredSource:"Declared source",subjectPlaceholder:"E.g. equipment to bring…",factPlaceholder:"E.g. bring a whiteboard…",saveFact:"Save this fact",keywords:"Search by keywords",searchPlaceholder:"E.g. equipment…",search:"Search",searchNote:"Search looks at current facts. To read an earlier version, select a memory and open its history.",
+previous:"Previous",next:"Next",correctFactHeading:"Correct the selected memory",replacement:"Complete replacement fact",saveNewVersion:"Save the new version",technical:"Connection and real MCP requests",technicalIntro:"prepare_workshop prepares a preview and a plan receipt. export_workshop checks the current version on the server before producing the file. Receipts belong to this connection and are transient, even when facts are durable. No language model or Alexa+ device is connected.",
+actionLog:"Action log",refresh:"Refresh memories",newSession:"New session",reconnect:"Reconnect",voiceOff:"Voice off",voiceOn:"Voice on",footer:"Sources are declarations. Corrections preserve previous versions. The public session expires after 30 minutes idle or server shutdown; its tunnel is temporary.",
+preview:"Fictional preview",previewTitle:"One workshop. Then a change.",previewBefore:"Before the change",previewAfter:"After the change",previewTwelve:"12 people, 12 seats",previewSix:"12 people, 6 seats",previewCaption:"Run the example: the server will prepare an initial plan. A room change will make it obsolete; you will choose how to adapt.",
+briefPreview:"Example brief to try",briefCurrent:"Saved brief, version {version}",people:"{n} people",seats:"{n} seats",window:"Available window",duration:"Session / transition",minutes:"{session} min / {transition} min",exampleTitle:"Project framing workshop",exampleSource:"synthetic:Lea's fictional brief, original room",roomSource:"synthetic:Lea's fictional note, new 6-seat room",
+ready:"Plan prepared",decision:"Decision needed",blocked:"No feasible plan",obsolete:"Obsolete plan",planTitle:"Your workshop run sheet",initialLead:"The plan uses the current brief.",readyLead:"{scheduled} {people} across {sessions} {sessionLabel}.",personScheduledOne:"participant scheduled",personScheduledMany:"participants scheduled",sessionOne:"session",sessionMany:"sessions",decisionLead:"The new room cannot fit everyone in one session. Choose how to adapt the workshop.",
+group:"Group",time:"Time",scheduled:"Participants scheduled",waitlisted:"On the waitlist",groupLabel:"Group {n}",checklist:"Preparation checklist",download:"Download the plan",downloadNote:"English run sheet produced after the server checks the current brief. Already downloaded copies remain non-revocable snapshots.",changeRoom:"Change room: 6 seats",recalculate:"Recalculate from this brief",provenance:"Which brief does this plan use?",version:"Version {n}",memoryId:"Memory ID",sourceLabel:"Declared sources",planOld:"The previous plan no longer matches the current brief.",oldPlan:"Previous plan, obsolete (version {version})",
+splitTitle:"Keep every participant",limitTitle:"Keep one group",splitDescription:"{groups} consecutive groups, {participants} participants scheduled.",limitDescription:"{participants} participants scheduled; {waitlisted} on the waitlist.",splitAction:"Choose consecutive groups",limitAction:"Choose one group and a waitlist",notFeasible:"This choice does not fit the available window.",optionDuration:"{required} min needed; {available} min available.",checkCapacity:"Confirm the declared room capacity of {capacity} places.",checkGroups:"Assign {participants} participants to the listed groups.",checkDate:"Confirm the date and local times with participants; this tool sends no messages.",checkWaitlist:"Choose and inform the {waitlisted} people on the waiting list; the tool does not select their identities.",noOptions:"No plan was produced. Edit the brief to resolve the constraint.",backendReasons:"Calculation details",serverLimits:"Plan limits",
+loading:"Contacting memory…",saving:"Saving the brief…",planning:"Calculating the plan…",reading:"Reading the current version…",searching:"Searching keywords…",roomChanged:"Capacity saved in version {version}. The previous plan is obsolete; a choice is required.",planReady:"Plan received from brief version {version}. Download it, or change a constraint.",needsDecision:"The brief changed. Choose an adaptation; no new downloadable plan has been produced yet.",planBlocked:"The server cannot produce a compatible plan. Edit the brief.",saved:"Fact saved with its declared source.",corrected:"Version {version} saved; the previous one stays in history.",savedReadFailed:"The write is confirmed, but the following read did not finish. Refresh memories before sending another write.",
+newSessionReady:"New synthetic session. Earlier memories are not carried over.",reconnected:"Reconnected. Durable facts are preserved.",refreshed:"Memories refreshed. Choose the context to use.",currentLoaded:"Version {version} loaded. Recalculate the plan if its brief changed.",noMemories:"No facts saved in this session.",noResults:"No current fact contains those words. Try a subject keyword, or show all memories.",allMemories:"All memories",page:"{start}–{end} of {total}",readMemory:"Read this memory",history:"Version history",correctMemory:"Correct this memory",useBrief:"Use this workshop brief",current:"Current",preserved:"Preserved",editContext:"Correcting “{title}”, version {version}. This targets that exact memory ID and version.",
+stale:"This memory changed after you selected it. Your correction was not applied. Read the current version, then explicitly select it again.",planStale:"The brief changed after calculation. This plan cannot be downloaded; recalculate it.",missingTitle:"Add a subject.",missingContent:"Write the complete fact.",missingSource:"Add at least one declared source.",missingQuery:"Enter keywords.",invalidBrief:"Check the brief fields and add the source of the change.",notChosen:"Select a memory first.",
+connectFailed:"Memory is not responding. Actions are disabled. Use “Reconnect” in the connection details.",backendMissing:"This server version does not yet have the export guard. The display remains a preview, not a delivered result.",modeError:"The storage mode could not be verified. Saving has not been enabled.",expired:"This session ended. Your request was not retried; open a new session.",timeout:"The response did not arrive in time. Try the read again, or reconnect.",network:"The connection was interrupted. Check the server before continuing.",uncertain:"The write response did not arrive. It may have completed. Refresh memories before trying the write again.",reconcile:"Refresh memories first to reconcile the last write.",protocolError:"The response does not match the request. Reconnect before continuing.",errorPrefix:"The action did not finish: {detail}",
+confirmSession:"Close this temporary session and its memories? The new example will not carry them over.",confirmDraft:"A form contains unsaved text. Discard that text?",durableDemo:"The scripted example is only available in temporary synthetic mode. This durable memory has not been changed.",voiceUnavailable:"No installed local voice is available in this language.",voiceAvailable:"Optional reading with a locally installed voice.",downloaded:"Run sheet received and downloaded for brief version {version}.",cancelled:"Edit cancelled. No memory changed."
+}};
+let language="fr",session=null,protocol=null,nextId=1,busy=false,connected=false,storageMode=null;
+let memoryOffset=0,totalMemories=0,selectedMemory=null,selectedHistory=null,factTarget=null,briefEditTarget=null;
+let workshopMemory=null,workshopBrief=null,activePlan=null,previousPlan=null,planObsolete=false,uncertainWrite=false,voiceOn=false;
+let mutationSequence=0,lastMutationReceipt=null,searchResults=null,feedbackState={key:"welcome",kind:"",values:{}};
+const pageSize=20,inventory=new Map(),searchInventory=new Map();
+function t(key,values={}){return (COPY[language][key] || COPY.en[key] || key).replace(/\{(\w+)\}/g,(_,name)=>String(values[name] ?? ""));}
+function escapeHtml(value){return String(value ?? "").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function num(value){return new Intl.NumberFormat(language).format(value);}
+function dateLabel(value){const date=new Date(value);return Number.isNaN(date.valueOf())?"":new Intl.DateTimeFormat(language,{dateStyle:"medium",timeStyle:"short"}).format(date);}
+function eventDate(value){const date=new Date(value+"T12:00:00Z");return Number.isNaN(date.valueOf())?value:new Intl.DateTimeFormat(language,{dateStyle:"medium",timeZone:"UTC"}).format(date);}
+function refs(value){return Array.isArray(value)?value.map(v=>String(v).trim()).filter(Boolean):String(value || "").split(/\r?\n/).map(v=>v.trim()).filter(Boolean);}
+function appError(code,detail=""){const error=new Error(detail || code);error.code=code;return error;}
+function setConnection(state){$("connection").dataset.state=state;$("connection").textContent=t(state==="connected"?"connected":state==="connecting"?"connecting":state==="ended"?"sessionEnded":"connectionError");}
+function feedback(key,kind="",values={}){feedbackState={key,kind,values};$("feedback").className="feedback"+(kind?" "+kind:"");$("feedback").textContent=t(key,values);}
+function logAction(key,values={}){const node=document.createElement("p");node.textContent=t(key,values);$("log").appendChild(node);while($("log").children.length>45)$("log").firstChild.remove();}
+function frame(kind,label,data){const node=document.createElement("div"),title=document.createElement("b"),body=document.createElement("pre");node.className="frame "+kind;title.textContent=label;body.textContent=typeof data==="string"?data:JSON.stringify(data,null,2);node.appendChild(title);node.appendChild(body);$("proto").appendChild(node);while($("proto").children.length>70)$("proto").firstChild.remove();}
+function renderLanguage(){
+ document.documentElement.lang=language;document.title="Mnemo — "+t("headline");$("language").value=language;
+ document.querySelectorAll("[data-i18n]").forEach(node=>node.textContent=t(node.dataset.i18n));document.querySelectorAll("[data-placeholder]").forEach(node=>node.placeholder=t(node.dataset.placeholder));
+ renderMode();renderBrief();renderPlan();renderInventory();renderMemoryDetail();renderEditContexts();feedback(feedbackState.key,feedbackState.kind,feedbackState.values);setConnection(connected?"connected":$("connection").dataset.state || "connecting");updateVoice();updateControls();
 }
-function addMsg(cls, safeHtml){
-  const d = document.createElement("div");
-  d.className = "msg " + cls;
-  d.innerHTML = safeHtml;
-  log.appendChild(d); log.scrollTop = log.scrollHeight;
-  return d;
+function renderMode(){const durable=storageMode==="local_durable";$("mode-label").textContent=t(durable?"durable":"synthetic");$("mode-note").textContent=t(durable?"durableNote":"sessionNote");$("new-session").textContent=t(durable || !connected?"reconnect":"newSession");}
+function previewBrief(){return {schema:"workshop-brief-v1",title:t("exampleTitle"),participants:12,capacity:12,event_date:"2026-11-06",timezone:"Europe/Paris",start:"10:00",end:"12:00",session_minutes:45,transition_minutes:15};}
+function renderBrief(){
+ const b=workshopBrief || previewBrief();
+ $("brief-summary").innerHTML="<p class='brief-name'>"+escapeHtml(b.title)+"</p><dl class='brief-list'>"+[
+ [t("participants"),t("people",{n:num(b.participants)})],[t("capacity"),t("seats",{n:num(b.capacity)})],[t("eventDate"),eventDate(b.event_date)],[t("window"),b.start+"–"+b.end+" ("+b.timezone+")"],[t("duration"),t("minutes",{session:num(b.session_minutes),transition:num(b.transition_minutes)})]
+ ].map(([label,value])=>"<div><dt>"+escapeHtml(label)+"</dt><dd>"+escapeHtml(value)+"</dd></div>").join("")+"</dl><p class='brief-foot'>"+escapeHtml(workshopMemory?t("briefCurrent",{version:num(workshopMemory.version)}):t("briefPreview"))+"</p>";
 }
-function frame(kind, label, data){
-  const d = document.createElement("div"), title = document.createElement("b");
-  d.className = "frame " + kind; title.textContent = label;
-  d.appendChild(title);
-  d.appendChild(document.createTextNode(typeof data === "string" ? data : JSON.stringify(data)));
-  proto.appendChild(d); proto.scrollTop = proto.scrollHeight;
+function optionHtml(option){
+ const split=option.strategy==="split";
+ return "<section class='decision'><h3>"+escapeHtml(t(split?"splitTitle":"limitTitle"))+"</h3><p>"+escapeHtml(t(split?"splitDescription":"limitDescription",{groups:num(option.required_sessions),participants:num(option.planned_participants),waitlisted:num(option.waitlisted_participants)}))+"</p>"+
+ "<p>"+escapeHtml(t("optionDuration",{required:num(option.required_minutes),available:num(option.available_minutes)}))+"</p>"+
+ (!option.feasible?"<p class='unavailable'>"+escapeHtml(t("notFeasible"))+"</p>":"")+
+ "<button data-strategy='"+escapeHtml(option.strategy)+"'"+(!option.feasible?" disabled":"")+">"+escapeHtml(t(split?"splitAction":"limitAction"))+"</button></section>";
 }
-function clearChoices(){
-  pendingAction = null;
-  choiceTargets.clear();
+function displayChecklist(plan){
+ if(language==="en")return plan.checklist || [];
+ const items=[t("checkCapacity",{capacity:num(plan.inputs.capacity)}),t("checkGroups",{participants:num(plan.scheduled_participants)}),t("checkDate")];
+ if(plan.waitlisted_participants)items.push(t("checkWaitlist",{waitlisted:num(plan.waitlisted_participants)}));
+ return items;
 }
-function choiceHtml(row, action, label){
-  const token = String(++choiceSequence);
-  choiceTargets.set(token, {row, action});
-  return "<button class='choice' data-choice-token='" + token + "'>" +
-    escapeHtml(label || row.title) + " · v" + escapeHtml(row.version) + "</button>";
+function renderPlan(){
+ const target=$("plan-result");
+ if(!activePlan){
+ target.innerHTML="<div class='sheet-head'><div><h2 id='plan-heading'>"+escapeHtml(t("previewTitle"))+"</h2></div><span class='badge'>"+escapeHtml(t("preview"))+"</span></div><div class='preview-comparison'><div class='preview-half'><p>"+escapeHtml(t("previewBefore"))+"</p><strong>"+escapeHtml(t("previewTwelve"))+"</strong></div><div class='preview-half'><p>"+escapeHtml(t("previewAfter"))+"</p><strong>"+escapeHtml(t("previewSix"))+"</strong></div></div><p class='preview-caption'>"+escapeHtml(t("previewCaption"))+"</p>";
+ $("plan-provenance").innerHTML="";return;
+ }
+ const plan=activePlan,status=planObsolete?"obsolete":plan.status;
+ let html="<div class='sheet-head'><div><h2 id='plan-heading' tabindex='-1'>"+escapeHtml(t("planTitle"))+"</h2><p>"+escapeHtml(t("version",{n:num(plan.brief.version)}))+" · "+escapeHtml(eventDate(plan.inputs?.event_date || workshopBrief?.event_date || ""))+"</p></div><span class='badge "+(status==="ready"?"ready":status==="obsolete"?"obsolete":"")+"'>"+escapeHtml(t(status==="needs_decision"?"decision":status))+"</span></div><div class='plan-body'>";
+ if(planObsolete){
+ html+="<p class='plan-lead'>"+escapeHtml(t("planOld"))+"</p><button data-recalculate>"+escapeHtml(t("recalculate"))+"</button>";
+ }else if(plan.status==="ready"){
+ html+="<p class='plan-lead'>"+escapeHtml(t("readyLead",{scheduled:num(plan.scheduled_participants),people:t(plan.scheduled_participants===1?"personScheduledOne":"personScheduledMany"),sessions:num(plan.sessions.length),sessionLabel:t(plan.sessions.length===1?"sessionOne":"sessionMany")}))+"</p><table class='schedule'><thead><tr><th scope='col'>"+escapeHtml(t("time"))+"</th><th scope='col'>"+escapeHtml(t("group"))+"</th><th scope='col'>"+escapeHtml(t("participants"))+"</th></tr></thead><tbody>"+plan.sessions.map(s=>"<tr><td>"+escapeHtml(s.start)+"–"+escapeHtml(s.end)+"</td><td>"+escapeHtml(t("groupLabel",{n:num(s.group)}))+"</td><td>"+escapeHtml(num(s.participants))+"</td></tr>").join("")+"</tbody></table><div class='plan-summary'><span>"+escapeHtml(t("scheduled"))+" : <strong>"+escapeHtml(num(plan.scheduled_participants))+"</strong></span><span>"+escapeHtml(t("waitlisted"))+" : <strong>"+escapeHtml(num(plan.waitlisted_participants))+"</strong></span></div><h3 style='margin-top:24px'>"+escapeHtml(t("checklist"))+"</h3><ul class='checklist'>"+displayChecklist(plan).map(item=>"<li>"+escapeHtml(typeof item==="string"?item:JSON.stringify(item))+"</li>").join("")+"</ul><div class='plan-actions'><button id='download-plan' data-download>"+escapeHtml(t("download"))+"</button><button id='change-room' class='secondary' data-change-room"+(workshopBrief?.capacity===6?" disabled":"")+">"+escapeHtml(t("changeRoom"))+"</button></div><p class='export-note'>"+escapeHtml(t("downloadNote"))+"</p>";
+ }else if(plan.status==="needs_decision"){
+ html+="<p class='plan-lead'>"+escapeHtml(t("decisionLead"))+"</p><p class='decision-intro'>"+escapeHtml(t("needsDecision"))+"</p><div class='decisions'>"+(plan.options || []).map(optionHtml).join("")+"</div>";
+ }else{
+ html+="<p class='plan-lead'>"+escapeHtml(t("planBlocked"))+"</p><p class='decision-intro'>"+escapeHtml(t("noOptions"))+"</p>"+(plan.options?.length?"<div class='decisions'>"+plan.options.map(optionHtml).join("")+"</div>":"")+"<button class='secondary' style='margin-top:18px' data-edit-brief>"+escapeHtml(t("editBrief"))+"</button>";
+ }
+ html+="</div>";
+ if(previousPlan && previousPlan.brief.version!==plan.brief.version)html+="<details class='old-plan'><summary>"+escapeHtml(t("oldPlan",{version:num(previousPlan.brief.version)}))+"</summary><p>"+escapeHtml((previousPlan.sessions || []).map(row=>t("groupLabel",{n:num(row.group)})+": "+row.start+"–"+row.end+" / "+num(row.participants)).join("\n") || t("planOld"))+"</p></details>";
+ target.innerHTML=html;
+ const reasons=(plan.reasons || []).map(r=>"<li>"+escapeHtml(typeof r==="string"?r:JSON.stringify(r))+"</li>").join("");
+ $("plan-provenance").innerHTML="<details class='provenance'><summary>"+escapeHtml(t("provenance"))+"</summary><div class='details-body'><p>"+escapeHtml(t("memoryId"))+" : <code translate='no'>"+escapeHtml(plan.brief.memory_id)+"</code></p><p>"+escapeHtml(t("version",{n:num(plan.brief.version)}))+"</p><p>"+escapeHtml(t("sourceLabel"))+" : "+escapeHtml((plan.brief.source_refs || []).join(" / "))+"</p><p><code translate='no'>"+escapeHtml(plan.brief.entry_hash || "")+"</code></p>"+(reasons?"<p>"+escapeHtml(t("backendReasons"))+"</p><ul>"+reasons+"</ul>":"")+(plan.limits?.length?"<p>"+escapeHtml(t("serverLimits"))+"</p><ul>"+plan.limits.map(v=>"<li>"+escapeHtml(v)+"</li>").join("")+"</ul>":"")+"</div></details>";
+ updateControls();
 }
-function choicesHtml(rows, action){
-  return "<div class='choices'>" + rows.map(r => choiceHtml(r, action)).join("") + "</div>";
+function renderInventory(){
+ const rows=searchResults===null?Array.from(inventory.values()):searchResults;
+ $("mems").innerHTML=rows.length?rows.map(row=>"<button class='memory-card' data-memory-id='"+escapeHtml(row.memory_id)+"' data-memory-scope='"+(searchResults===null?"inventory":"search")+"'><strong>"+escapeHtml(row.title)+" · "+escapeHtml(t("version",{n:num(row.version)}))+"</strong><span>"+escapeHtml(row.content)+"</span></button>").join(""):"<p class='empty'>"+escapeHtml(t(searchResults===null?"noMemories":"noResults"))+"</p>";
+ $("pager").hidden=searchResults!==null || totalMemories<=pageSize;
+ $("page-label").textContent=t("page",{start:num(totalMemories?memoryOffset+1:0),end:num(Math.min(memoryOffset+pageSize,totalMemories)),total:num(totalMemories)});
 }
-function memoryTitle(content){
-  // A stable topic label avoids retaining an old amount/date in new titles.
-  // This is a lexical convenience, not semantic subject identification.
-  const topic = content.split(/\s+(?:is|are|was|were|expires?|est|sont|expire)\b/i)[0]
-    .split(/[:–,]/)[0].trim();
-  return (topic || content).slice(0, 64);
+function parseBrief(row){try{const value=JSON.parse(row.content);return value?.schema==="workshop-brief-v1"?value:null;}catch(_){return null;}}
+function renderMemoryDetail(){
+ const box=$("memory-detail");box.hidden=!selectedMemory;if(!selectedMemory)return;
+ const chain=selectedHistory?.chain || [];
+ box.innerHTML="<h3>"+escapeHtml(selectedMemory.title)+"</h3><p class='memory-text'>"+escapeHtml(selectedMemory.content)+"</p><p class='metadata'>"+escapeHtml(t("version",{n:num(selectedMemory.version)}))+" · <code translate='no'>"+escapeHtml(selectedMemory.memory_id)+"</code></p><p class='metadata'>"+escapeHtml(t("sourceLabel"))+" : "+escapeHtml((selectedMemory.source_refs || []).join(" / "))+"</p><div class='form-actions'><button data-correct-fact>"+escapeHtml(t("correctMemory"))+"</button>"+(parseBrief(selectedMemory)?"<button class='secondary' data-use-brief>"+escapeHtml(t("useBrief"))+"</button>":"")+"</div><details><summary>"+escapeHtml(t("history"))+" ("+escapeHtml(num(chain.length))+")</summary><ol class='history-list'>"+chain.map(v=>"<li><p class='metadata'>"+escapeHtml(t("version",{n:num(v.version)}))+" · "+escapeHtml(t(v.status==="current"?"current":"preserved"))+" · "+escapeHtml(dateLabel(v.recorded_at))+"</p><p>"+escapeHtml(v.content)+"</p><p class='metadata'>"+escapeHtml((v.source_refs || []).join(" / "))+"</p></li>").join("")+"</ol></details>";
+ updateControls();
 }
-
-/* The negotiated version and session capability accompany every later request. */
-function rpcHeaders(){
-  const headers = {"Content-Type":"application/json", "Accept":"application/json, text/event-stream"};
-  if (session) headers["Mcp-Session-Id"] = session;
-  if (protocol) headers["MCP-Protocol-Version"] = protocol;
-  return headers;
+function renderEditContexts(){
+ if(briefEditTarget)$("brief-editor-context").textContent=t("editContext",{title:briefEditTarget.title,version:num(briefEditTarget.version)});
+ if(factTarget)$("fact-edit-context").textContent=t("editContext",{title:factTarget.title,version:num(factTarget.version)});
 }
-function parseSse(text, requestId){
-  let result = null;
-  for (const event of text.replace(/\r\n/g, "\n").split("\n\n")){
-    const data = event.split("\n").filter(line => line.startsWith("data:"))
-      .map(line => line.slice(5).trimStart()).join("\n");
-    if (!data) continue;
-    try{
-      const message = JSON.parse(data);
-      if (message.id === requestId) result = message;
-    }catch(_){}
-  }
-  return result;
+function hasDraft(){return ["fact-title","fact-content","fact-source"].some(id=>$(id).value.trim()) || (!$("brief-editor").hidden && (Boolean($("brief-source").value.trim()) || JSON.stringify(readBriefForm())!==JSON.stringify(parseBrief(briefEditTarget || {})))) || (!$("fact-editor").hidden && ($("fact-replacement").value.trim()!==String(factTarget?.content || "").trim() || $("fact-correction-source").value.trim()));}
+function updateControls(){
+ for(const id of ["prepare-example","save-fact","search-facts","refresh"])$(id).disabled=busy || !connected;
+ $("prepare-example").disabled ||= storageMode!=="temporary_demo" || uncertainWrite;
+ $("save-fact").disabled ||= uncertainWrite;
+ for(const id of ["edit-brief","refresh-brief"])$(id).disabled=busy || !connected || !workshopMemory;
+ $("save-brief").disabled=busy || !connected || !briefEditTarget || uncertainWrite;
+ $("save-fact-correction").disabled=busy || !connected || !factTarget || uncertainWrite;
+ $("new-session").disabled=busy;$("language").disabled=busy;$("reconnect-row").hidden=connected || busy;$("reconnect-now").disabled=busy;
+ $("prev-page").disabled=busy || !connected || memoryOffset===0;$("next-page").disabled=busy || !connected || $("next-page").dataset.offset==="";
+ for(const node of document.querySelectorAll("[data-memory-id],[data-correct-fact],[data-use-brief],[data-edit-brief],[data-recalculate]"))node.disabled=busy || !connected;
+ for(const node of document.querySelectorAll("[data-strategy]"))node.disabled=busy || !connected || !(activePlan?.options || []).find(v=>v.strategy===node.dataset.strategy)?.feasible;
+ const download=document.querySelector("[data-download]");if(download)download.disabled=busy || !connected || planObsolete || activePlan?.status!=="ready" || uncertainWrite;
+ const room=document.querySelector("[data-change-room]");if(room)room.disabled=busy || !connected || planObsolete || workshopBrief?.capacity===6 || uncertainWrite;
+ document.querySelectorAll("form input,form textarea").forEach(node=>node.disabled=busy);
+ $("activity").hidden=!busy;renderMode();
 }
-async function rpc(method, params, isNotification = false){
-  const body = isNotification ? {jsonrpc:"2.0", method} :
-    {jsonrpc:"2.0", id:nextId++, method, params:params || {}};
-  frame("req", "→ " + method, body);
-  const resp = await fetch("/mcp", {
-    method:"POST", headers:rpcHeaders(), body:JSON.stringify(body),
-    credentials:"omit"
-  });
-  const text = await resp.text(), ct = resp.headers.get("Content-Type") || "";
-  let message = null;
-  if (ct.includes("text/event-stream")) message = parseSse(text, body.id);
-  else if (ct.includes("application/json") && text){
-    try{ message = JSON.parse(text); }catch(_){}
-  }
-  if (!resp.ok){
-    const detail = message?.error?.message ||
-      (resp.status === 404 ? "Session ended. Start a new demo; this request was not retried." :
-       "HTTP " + resp.status + ": " + text.slice(0, 200));
-    frame("err", "← " + method, detail);
-    throw new Error(detail);
-  }
-  if (resp.status === 202 && isNotification){
-    frame("res", "← 202 Accepted", "");
-    return null;
-  }
-  if (!message || message.id !== body.id)
-    throw new Error("The server did not return a matching MCP response.");
-  if (message.error){
-    frame("err", "← " + method, message.error);
-    throw new Error(message.error.message || "MCP request failed.");
-  }
-  if (method === "initialize"){
-    session = resp.headers.get("Mcp-Session-Id");
-    protocol = message.result?.protocolVersion;
-    if (!session || !protocol) throw new Error("The server did not establish an isolated MCP session.");
-  }
-  frame("res", "← " + method, message);
-  return message.result;
+async function interaction(action,label="loading"){
+ if(busy)return;busy=true;const before=mutationSequence;$("activity-text").textContent=t(label);updateControls();
+ try{return await action();}
+ catch(error){
+  if(mutationSequence>before)feedback("savedReadFailed","warning");
+  else if(error.uncertain){uncertainWrite=true;if(workshopMemory)markPlanObsolete();feedback("uncertain","warning");}
+  else if(error.code==="ended")feedback("expired","error");
+  else if(error.code==="timeout")feedback("timeout","error");
+  else if(error.code==="network")feedback("network","error");
+  else if(error.code==="missing-tool")feedback("backendMissing","warning");
+  else if(error.code==="mode")feedback("modeError","error");
+  else if(error.code==="protocol")feedback("protocolError","error");
+  else if(error.code==="stale"){markPlanObsolete();feedback("stale","warning");}
+  else feedback("errorPrefix","error",{detail:error.message});
+  return null;
+ }finally{busy=false;updateControls();}
 }
-async function callTool(name, args){
-  const res = await rpc("tools/call", {name, arguments:args});
-  if (!res) throw new Error("No tool result.");
-  const text = (res.content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
-  if (res.isError) throw new Error(text || "Tool failed.");
-  if (res.structuredContent) return res.structuredContent;
-  try{ return JSON.parse(text); }catch(_){ throw new Error("Unexpected tool response."); }
+async function readHttp(url,options={},timeoutMs=12000){
+ const controller=new AbortController();let timer;
+ const timeout=new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(appError("timeout"));},timeoutMs);});
+ try{return await Promise.race([(async()=>{let response;try{response=await fetch(url,{...options,credentials:"omit",signal:controller.signal});}catch(error){if(error.name==="AbortError")throw appError("timeout");throw appError("network");}return {response,text:await response.text()};})(),timeout]);}
+ finally{clearTimeout(timer);}
+}
+function rpcHeaders(){const headers={"Content-Type":"application/json","Accept":"application/json, text/event-stream"};if(session)headers["Mcp-Session-Id"]=session;if(protocol)headers["MCP-Protocol-Version"]=protocol;return headers;}
+function parseSse(text,requestId){let result=null;for(const event of text.replace(/\r\n/g,"\n").split("\n\n")){const data=event.split("\n").filter(line=>line.startsWith("data:")).map(line=>line.slice(5).trimStart()).join("\n");if(!data)continue;try{const value=JSON.parse(data);if(value.id===requestId)result=value;}catch(_){}}return result;}
+async function rpc(method,params,isNotification=false){
+ const body=isNotification?{jsonrpc:"2.0",method}:{jsonrpc:"2.0",id:nextId++,method,params:params || {}},writing=method==="tools/call" && ["remember","correct"].includes(params?.name);
+ frame("req",method,body);let packet;
+ try{packet=await readHttp("/mcp",{method:"POST",headers:rpcHeaders(),body:JSON.stringify(body)});}catch(error){if(writing)error.uncertain=true;throw error;}
+ const {response,text}=packet,ct=response.headers.get("Content-Type") || "";let message=null;
+ if(ct.includes("text/event-stream"))message=parseSse(text,body.id);else if(ct.includes("application/json") && text){try{message=JSON.parse(text);}catch(_){}}
+ if(!response.ok){frame("err",method,{HTTP:response.status,error:message?.error || text.slice(0,300)});if(response.status===404){connected=false;session=null;protocol=null;setConnection("ended");updateControls();throw appError("ended");}const error=appError("http",message?.error?.message || "HTTP "+response.status);if(writing && response.status>=500)error.uncertain=true;throw error;}
+ if(response.status===202 && isNotification){frame("res",method,{HTTP:202});return null;}
+ if(!message || message.id!==body.id){const error=appError("protocol");if(writing)error.uncertain=true;throw error;}
+ if(message.error){frame("err",method,message.error);throw new Error(message.error.message || "MCP error");}
+ if(method==="initialize"){session=response.headers.get("Mcp-Session-Id");protocol=message.result?.protocolVersion;if(!session || !protocol)throw appError("protocol");}
+ frame("res",method,message);return message.result;
+}
+async function callTool(name,args){
+ const result=await rpc("tools/call",{name,arguments:args});if(!result)throw appError("protocol");
+ const text=(result.content || []).filter(v=>v.type==="text").map(v=>v.text).join("\n");
+ if(result.isError){const error=new Error(text || "MCP tool error");if(/stale|versionconflict|version conflict/i.test(text))error.code="stale";throw error;}
+ if(result.structuredContent)return result.structuredContent;
+ try{return JSON.parse(text);}catch(_){const error=appError("protocol");if(["remember","correct"].includes(name))error.uncertain=true;throw error;}
 }
 async function connect(){
-  const infoResponse = await fetch("/session-info", {credentials:"omit", cache:"no-store"});
-  if (!infoResponse.ok) throw new Error("Could not read the storage mode.");
-  const info = await infoResponse.json();
-  storageMode = info.storage;
-  if (!["temporary_demo", "local_durable"].includes(storageMode))
-    throw new Error("Unknown storage mode.");
-  $("new-session").textContent = storageMode === "local_durable" ? "Reconnect" : "New demo";
-  $("demo").title = storageMode === "local_durable" ?
-    "Synthetic scenarios require starting the server in --demo mode; this durable store will not be changed by the script." :
-    "Start a fresh isolated session with synthetic data";
-  const init = await rpc("initialize", {
-    protocolVersion:"2025-11-25", capabilities:{},
-    clientInfo:{name:"mnemo-simulator", version:"1.1.0"}
-  });
-  $("proto-badge").textContent = "MCP " + protocol;
-  await rpc("notifications/initialized", null, true);
-  const tools = await rpc("tools/list", {});
-  if (!(tools.tools || []).some(t => t.name === "list_memories"))
-    throw new Error("This interface needs the updated server with list_memories.");
-  $("status").textContent = "Connected · " + init.serverInfo.name +
-    (storageMode === "local_durable" ? " · local durable storage · reconnect keeps memories" :
-     " · isolated temporary demo · expires after 30 minutes idle or server stop");
-  $("status").className = "on";
+ connected=false;setConnection("connecting");updateControls();
+ try{
+ const {response,text}=await readHttp("/session-info",{cache:"no-store"});if(!response.ok)throw appError("mode");
+ let info;try{info=JSON.parse(text);}catch(_){throw appError("mode");}
+ if(!["temporary_demo","local_durable"].includes(info.storage))throw appError("mode");storageMode=info.storage;
+ await rpc("initialize",{protocolVersion:"2025-11-25",capabilities:{},clientInfo:{name:"mnemo-workshop-demo",version:"1.2.0"}});
+ await rpc("notifications/initialized",null,true);const list=await rpc("tools/list",{});
+ if(!["remember","recall","correct","history","list_memories","prepare_workshop","export_workshop"].every(name=>(list.tools || []).some(tool=>tool.name===name)))throw appError("missing-tool");
+ connected=true;$("proto-badge").textContent="MCP "+protocol;setConnection("connected");updateControls();
+ }catch(error){connected=false;setConnection("error");updateControls();throw error;}
 }
-async function newSession(announce = true){
-  if (session){
-    const response = await fetch("/mcp", {
-      method:"DELETE", headers:rpcHeaders(), credentials:"omit"
-    });
-    if (!response.ok && response.status !== 404)
-      throw new Error("Could not end this session. No new session was started.");
-  }
-  session = null; protocol = null; memoryOffset = 0;
-  clearChoices(); inventory.clear(); lastCreatedMemory = null;
-  memsBox.innerHTML = ""; log.innerHTML = ""; proto.innerHTML = "";
-  if (window.speechSynthesis) window.speechSynthesis.cancel();
-  await connect(); await refreshMemories();
-  if (announce) addMsg("alexa", storageMode === "local_durable" ?
-    "Reconnected to the local durable store. Existing memories are preserved." :
-    "New isolated demo session. Previous session memories are not carried over. Use synthetic examples only.");
-}
-
-/* A real inventory: pages count memories, not a fixed set of search words. */
 async function refreshMemories(){
-  const page = await callTool("list_memories", {
-    limit:pageSize, offset:memoryOffset, include_superseded:true
-  });
-  inventory.clear(); memsBox.innerHTML = "";
-  for (const row of page.results){
-    if (row.status !== "superseded") inventory.set(row.memory_id, row);
-    const d = document.createElement("div");
-    d.className = "mem" + (row.status === "superseded" ? " superseded" : "");
-    d.innerHTML = "<div class='t'>" + escapeHtml(row.title) +
-      " <span class='ver" + (row.status === "superseded" ? " sup" : "") + "'>v" +
-      escapeHtml(row.version) + (row.status === "superseded" ? " · superseded" : "") +
-      "</span></div><div class='c'>" + escapeHtml(row.content) +
-      "</div><div class='src'>Declared source: " +
-      escapeHtml((row.source_refs || []).join(" · ")) + "</div>" +
-      (row.status === "superseded" ? "" :
-       "<button class='edit-memory' data-edit-id='" + escapeHtml(row.memory_id) +
-       "'>Correct this memory</button>");
-    memsBox.appendChild(d);
-  }
-  if (!page.total_memories) memsBox.textContent = "No memories in this session. Run the synthetic demo or add one.";
-  const start = page.total_memories ? memoryOffset + 1 : 0;
-  const end = Math.min(memoryOffset + pageSize, page.total_memories);
-  $("page-label").textContent = start + "–" + end + " of " + page.total_memories + " memories";
-  $("prev-page").disabled = busy || memoryOffset === 0;
-  $("next-page").disabled = busy || !page.has_more;
-  $("next-page").dataset.offset = page.next_offset == null ? "" : String(page.next_offset);
+ const page=await callTool("list_memories",{limit:pageSize,offset:memoryOffset,include_superseded:false});
+ inventory.clear();for(const row of page.results || [])inventory.set(row.memory_id,row);totalMemories=page.total_memories;searchResults=null;searchInventory.clear();$("next-page").dataset.offset=page.next_offset==null?"":String(page.next_offset);uncertainWrite=false;renderInventory();updateControls();return page;
 }
-
-function fmtSingle(row){
-  return escapeHtml(row.content) + "\n<span class='meta'>Memory “" +
-    escapeHtml(row.title) + "” · v" + escapeHtml(row.version) +
-    " · declared source: " + escapeHtml((row.source_refs || []).join(" · ")) +
-    " · recorded " + escapeHtml(row.updated_at) + "</span>";
+async function rememberFact(value){
+ if(uncertainWrite)throw new Error(t("reconcile"));
+ const title=String(value.title || "").trim(),content=String(value.content || "").trim(),source_refs=refs(value.source_refs);
+ if(!title || !content || !source_refs.length)throw new Error(t(!title?"missingTitle":!content?"missingContent":"missingSource"));
+ const result=await callTool("remember",{title,content,source_refs});mutationSequence++;lastMutationReceipt={operation:"remember",...result};
+ const row={memory_id:result.memory_id,version:result.version,title,content,source_refs,updated_at:result.recorded_at,status:"current"};
+ feedback("saved","success");logAction("saved");return row;
 }
-function fmtRecall(data){
-  if (!data?.results?.length) return "I have nothing on that topic in this session.";
-  if (data.results.length > 1)
-    return "More than one memory matches. Choose the one you mean:" +
-      choicesHtml(data.results, "read");
-  return fmtSingle(data.results[0]);
+async function correctFact(target,value){
+ if(uncertainWrite)throw new Error(t("reconcile"));
+ const content=String(value.content || "").trim(),source_refs=refs(value.source_refs);if(!target)throw new Error(t("notChosen"));if(!content || !source_refs.length)throw new Error(t(!content?"missingContent":"missingSource"));
+ const result=await callTool("correct",{memory_id:target.memory_id,expected_version:target.version,content,source_refs});mutationSequence++;lastMutationReceipt={operation:"correct",...result};
+ if(workshopMemory?.memory_id===target.memory_id)markPlanObsolete();
+ const row={...target,version:result.version,content,source_refs,updated_at:result.corrected_at};
+ feedback("corrected","success",{version:num(row.version)});logAction("corrected",{version:num(row.version)});return row;
 }
-async function historyReply(row){
-  const h = await callTool("history", {memory_id:row.memory_id});
-  return "History of “" + escapeHtml(h.title) + "”:\n" +
-    h.chain.map(v => "• v" + escapeHtml(v.version) + " (" + escapeHtml(v.status) +
-      ") — " + escapeHtml(v.content) + " · declared source: " +
-      escapeHtml((v.source_refs || []).join(" · "))).join("\n");
+function markPlanObsolete(){if(activePlan?.status==="ready" && !planObsolete)previousPlan=activePlan;planObsolete=Boolean(activePlan);renderPlan();}
+async function prepareWorkshop(strategy){
+ if(!workshopMemory)throw new Error(t("notChosen"));
+ const args={memory_id:workshopMemory.memory_id,expected_version:workshopMemory.version};if(strategy)args.strategy=strategy;
+ const result=await callTool("prepare_workshop",args);
+ if(!["ready","needs_decision","blocked"].includes(result.status) || !result.brief || result.brief.memory_id!==workshopMemory.memory_id || result.brief.version!==workshopMemory.version)throw appError("protocol");
+ if("export_text" in result)throw appError("protocol");
+ if(result.status==="ready" && (!Array.isArray(result.sessions) || !/^plan_[0-9a-f]{32}$/.test(result.plan_id || "")))throw appError("protocol");
+ if(result.status!=="ready" && result.plan_id!==null)throw appError("protocol");
+ activePlan=result;planObsolete=false;renderBrief();renderPlan();
+ feedback(result.status==="ready"?"planReady":result.status==="needs_decision"?"needsDecision":"planBlocked",result.status==="ready"?"success":"warning",{version:num(result.brief.version)});logAction(result.status==="ready"?"planReady":"needsDecision",{version:num(result.brief.version)});return result;
 }
-async function applyCorrection(target, content){
-  try{
-    const result = await callTool("correct", {
-      memory_id:target.memory_id, expected_version:target.version, content,
-      source_refs:["demo-user:correction:" + new Date().toISOString()]
-    });
-    return "Corrected the chosen memory “" + escapeHtml(target.title) + "” to <b>v" +
-      escapeHtml(result.version) + "</b>. Its earlier version stays in history.";
-  }catch(error){
-    if (/stale|versionconflict|version conflict/i.test(error.message))
-      return "That memory changed after the version you chose. Your correction was not applied. " +
-        "Review the current memory and choose it again; I will not overwrite it automatically.";
-    throw error;
-  }
+async function createWorkshopExample(){
+ if(storageMode!=="temporary_demo")throw new Error(t("durableDemo"));
+ if((totalMemories || hasDraft()) && window.confirm && !window.confirm(t("confirmSession")))return null;
+ await newSession(false);const brief=previewBrief();workshopMemory=await rememberFact({title:brief.title,content:JSON.stringify(brief),source_refs:[t("exampleSource")]});workshopBrief=brief;renderBrief();await prepareWorkshop();await refreshMemories();return activePlan;
 }
-
-/* Deterministic routing; every correction needs an explicitly chosen ID. */
-async function agentReply(input){
-  const text = input.trim();
-  const waiting = pendingAction;
-  clearChoices();
-  const correction = text.match(/^(?:actually|correction|oops|fix|au fait|no|non)\b[\s,:—-]+(.+)$/i);
-  if (/^(?:cancel|never mind|nevermind|annule|annuler|stop)[.!]?$/i.test(text))
-    return "Cancelled. No memory has changed.";
-  if (waiting?.kind === "awaiting-correction" && correction)
-    return applyCorrection(waiting.target, correction[1].trim());
-  let match;
-  if ((match = text.match(/^(?:remember(?: that)?|note|souviens[- ]toi(?: que)?)\s+(.+)/i))){
-    const content = match[1].trim();
-    const title = memoryTitle(content);
-    const result = await callTool("remember", {
-      title, content, source_refs:["demo-user:statement:" + new Date().toISOString()]
-    });
-    lastCreatedMemory = {memory_id:result.memory_id, version:result.version, title};
-    return "Remembered with a <b>declared user source</b>, not a verified document.\n" +
-      "<span class='meta'>" + escapeHtml(result.memory_id) + " · v" +
-      escapeHtml(result.version) + "</span>";
-  }
-  if (correction){
-    const content = correction[1].trim();
-    const page = await callTool("list_memories", {limit:pageSize, offset:memoryOffset});
-    if (!page.results.length) return "There is no memory to correct in this session.";
-    pendingAction = {kind:"correct", content};
-    return "Which memory should receive this correction? Nothing has changed yet.\n" +
-      "<span class='meta'>New content: " + escapeHtml(content) + "</span>" +
-      choicesHtml(page.results, "correct") +
-      "<span class='meta'>Use the inventory pages to choose any other memory, or send a new request to cancel.</span>";
-  }
-  if ((match = text.match(/^(?:history|audit|versions?)\s+(?:(?:of|for|about)\s+)?(.+)$/i))){
-    const result = await callTool("recall", {query:match[1], limit:10});
-    if (!result.results.length) return "No memory matches that topic.";
-    if (result.results.length > 1)
-      return "Choose the memory whose history you want:" + choicesHtml(result.results, "history");
-    return historyReply(result.results[0]);
-  }
-  return fmtRecall(await callTool("recall", {query:text, limit:10}));
+async function changeRoom(){
+ if(!workshopMemory || !workshopBrief)throw new Error(t("notChosen"));
+ const brief={...workshopBrief,capacity:6};const row=await correctFact({...workshopMemory},{content:JSON.stringify(brief),source_refs:[...new Set([...(workshopMemory.source_refs || []),t("roomSource")])]});
+ workshopMemory=row;workshopBrief=brief;renderBrief();feedback("roomChanged","warning",{version:num(row.version)});await prepareWorkshop();await refreshMemories();return activePlan;
 }
-async function chooseMemory(token){
-  const choice = choiceTargets.get(token);
-  if (!choice) return;
-  const pending = pendingAction;
-  clearChoices();
-  let reply;
-  if (choice.action === "correct"){
-    if (pending?.kind !== "correct") return;
-    reply = await applyCorrection(choice.row, pending.content);
-  }else if (choice.action === "history") reply = await historyReply(choice.row);
-  else reply = fmtSingle(choice.row);
-  const node = addMsg("alexa", reply); speakReply(node.textContent);
-  await refreshMemories();
+async function refreshWorkshop(){
+ if(!workshopMemory)return null;const history=await callTool("history",{memory_id:workshopMemory.memory_id}),latest=history.chain.at(-1);if(!latest)throw appError("protocol");
+ const row={memory_id:history.memory_id,title:history.title,version:latest.version,content:latest.content,source_refs:latest.source_refs,updated_at:latest.recorded_at};
+ const brief=parseBrief(row);if(!brief)throw new Error(t("invalidBrief"));if(activePlan && activePlan.brief.version!==row.version)markPlanObsolete();
+ workshopMemory=row;workshopBrief=brief;uncertainWrite=false;renderBrief();renderPlan();feedback("currentLoaded","",{version:num(row.version)});return row;
 }
-async function editFromInventory(id){
-  const target = inventory.get(id);
-  if (!target) return;
-  if (pendingAction?.kind === "correct"){
-    const content = pendingAction.content;
-    clearChoices();
-    const node = addMsg("alexa", await applyCorrection(target, content));
-    speakReply(node.textContent); await refreshMemories();
-  }else{
-    clearChoices();
-    pendingAction = {kind:"awaiting-correction", target};
-    addMsg("alexa", "You chose “" + escapeHtml(target.title) + "” v" +
-      escapeHtml(target.version) + ". Enter ‘Correction:’ followed by its complete replacement text. Questions remain read-only.");
-  }
+async function getDownloadData(){
+ if(!activePlan || activePlan.status!=="ready" || planObsolete || uncertainWrite)throw new Error(t("planStale"));
+ const plan=activePlan;let result;
+ try{result=await callTool("export_workshop",{plan_id:plan.plan_id});}
+ catch(error){if(error.code==="stale"){markPlanObsolete();feedback("planStale","warning");return null;}throw error;}
+ if(result.status!=="exported" || result.plan_id!==plan.plan_id || !result.export_text || result.brief?.memory_id!==plan.brief.memory_id || result.brief?.version!==plan.brief.version || result.brief?.entry_hash!==plan.brief.entry_hash)throw appError("protocol");
+ return {text:result.export_text,filename:result.filename,version:result.brief.version,plan_id:result.plan_id,checked_at:result.checked_at};
 }
-async function handle(input){
-  addMsg("user", escapeHtml(input));
-  const thinking = addMsg("alexa", "…");
-  try{
-    thinking.innerHTML = await agentReply(input);
-    speakReply(thinking.textContent);
-  }catch(error){
-    thinking.innerHTML = "<span class='error'>Request failed:</span> " + escapeHtml(error.message);
-  }finally{
-    log.scrollTop = log.scrollHeight;
-    await refreshMemories();
-  }
+async function downloadPlan(){
+ const data=await getDownloadData();if(!data)return null;
+ const blob=new Blob([data.text],{type:"text/plain;charset=utf-8"}),url=URL.createObjectURL(blob),link=document.createElement("a");
+ link.href=url;link.download=data.filename;document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ feedback("downloaded","success",{version:num(data.version)});return data;
 }
-
-function localVoice(){
-  return window.speechSynthesis?.getVoices().find(v => v.localService && /^en(?:-|$)/i.test(v.lang)) || null;
+function openBriefEditor(){
+ if(!workshopMemory || !workshopBrief)return;briefEditTarget={...workshopMemory};
+ for(const [id,key] of Object.entries({"brief-title":"title","brief-participants":"participants","brief-capacity":"capacity","brief-date":"event_date","brief-timezone":"timezone","brief-start":"start","brief-end":"end","brief-duration":"session_minutes","brief-transition":"transition_minutes"}))$(id).value=String(workshopBrief[key]);
+ $("brief-source").value="";$("brief-error").textContent="";$("review-edit-version").hidden=true;$("brief-editor").hidden=false;renderEditContexts();$("brief-title").focus();updateControls();
 }
-function updateVoiceControl(){
-  const available = Boolean(localVoice() && window.SpeechSynthesisUtterance);
-  $("voice").disabled = !available;
-  $("voice").title = available ? "Optional response using an installed local English voice" :
-    "No installed local English voice is available";
-  if (!available) voiceOn = false;
-  $("voice").textContent = voiceOn ? "🔊 Voice on" : "🔈 Voice off";
-  $("voice").setAttribute("aria-pressed", String(voiceOn));
+function readBriefForm(){return {schema:"workshop-brief-v1",title:$("brief-title").value.trim(),participants:Number($("brief-participants").value),capacity:Number($("brief-capacity").value),event_date:$("brief-date").value,timezone:$("brief-timezone").value,start:$("brief-start").value,end:$("brief-end").value,session_minutes:Number($("brief-duration").value),transition_minutes:Number($("brief-transition").value)};}
+async function saveBrief(brief,source){
+ if(!briefEditTarget)throw new Error(t("notChosen"));
+ try{const row=await correctFact({...briefEditTarget},{content:JSON.stringify(brief),source_refs:[...new Set([...(briefEditTarget.source_refs || []),...refs(source)])]});workshopMemory=row;workshopBrief=brief;briefEditTarget=null;$("brief-editor").hidden=true;renderBrief();await prepareWorkshop();await refreshMemories();return row;}
+ catch(error){if(error.code==="stale"){$("brief-error").textContent=t("stale");$("review-edit-version").hidden=false;markPlanObsolete();}throw error;}
 }
-function speakReply(text){
-  const voice = localVoice();
-  if (!voiceOn || !voice || !window.SpeechSynthesisUtterance) return;
-  const utterance = new window.SpeechSynthesisUtterance(text.slice(0, 900));
-  utterance.voice = voice; utterance.lang = voice.lang;
-  window.speechSynthesis.cancel(); window.speechSynthesis.speak(utterance);
+async function searchMemories(query){
+ const value=String(query || "").trim();if(!value){$("search-error").textContent=t("missingQuery");$("search-query").setAttribute("aria-invalid","true");$("search-query").focus();return null;}
+ $("search-query").removeAttribute("aria-invalid");$("search-error").textContent="";
+ const result=await callTool("recall",{query:value,limit:10});searchResults=result.results || [];searchInventory.clear();for(const row of searchResults)searchInventory.set(row.memory_id,row);
+ selectedMemory=null;selectedHistory=null;factTarget=null;$("fact-editor").hidden=true;renderInventory();renderMemoryDetail();return result;
 }
-async function interaction(action){
-  if (busy) return;
-  busy = true; ring.classList.add("thinking");
-  for (const id of ["send","demo","new-session","inp","prev-page","next-page"]) $(id).disabled = true;
-  try{ await action(); }
-  catch(error){ addMsg("alexa", "Request failed: " + escapeHtml(error.message)); }
-  finally{
-    busy = false; ring.classList.remove("thinking");
-    for (const id of ["send","demo","new-session","inp"]) $(id).disabled = false;
-    $("demo").disabled = storageMode === "local_durable";
-    $("prev-page").disabled = memoryOffset === 0;
-    $("next-page").disabled = $("next-page").dataset.offset === "";
-  }
+async function selectMemory(row){
+ selectedMemory={...row};selectedHistory=null;factTarget=null;$("fact-editor").hidden=true;renderMemoryDetail();selectedHistory=await callTool("history",{memory_id:row.memory_id});renderMemoryDetail();return selectedHistory;
 }
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-async function playDemo(){
-  if (storageMode !== "temporary_demo")
-    throw new Error("This local store is durable. The synthetic script is available in --demo mode only.");
-  await newSession(false);
-  addMsg("alexa", "Synthetic scripted demo in a new session. It chooses only the exact memory ID it creates.");
-  await handle("Remember that my apartment lease is 24 months, ending March 2028");
-  const lease = lastCreatedMemory;
-  await sleep(400); await handle("What about my lease?");
-  await sleep(400); await handle("Remember that my dentist is Dr. Ferrand");
-  await sleep(400); await handle("What about my passport?");
-  await sleep(400); await handle("Actually, my lease is 18 months, ending September 2027");
-  clearChoices();
-  addMsg("alexa", "Script explicitly chooses its lease memory: " + escapeHtml(lease.memory_id) + ".");
-  addMsg("alexa", await applyCorrection(lease, "my lease is 18 months, ending September 2027"));
-  await refreshMemories();
-  await sleep(400); await handle("History of the lease");
-  await sleep(400); await handle("What about my dentist?");
-  const node = addMsg("alexa", "The passport was not invented, and the dentist was not changed. " +
-    "The chosen lease has two versions. User sources are declarations; local consistency checks do not authenticate documents.");
-  speakReply(node.textContent);
+function openFactCorrection(){if(!selectedMemory)return;factTarget={...selectedMemory};$("fact-replacement").value=factTarget.content;$("fact-correction-source").value="";$("fact-correction-error").textContent="";$("fact-editor").hidden=false;renderEditContexts();$("fact-replacement").focus();updateControls();}
+async function applyFactCorrection(value){
+ if(!factTarget)throw new Error(t("notChosen"));
+ try{const row=await correctFact({...factTarget},value);if(row.memory_id===workshopMemory?.memory_id){const brief=parseBrief(row);if(brief){workshopMemory=row;workshopBrief=brief;renderBrief();}}factTarget=null;$("fact-editor").hidden=true;await refreshMemories();await selectMemory(row);return row;}
+ catch(error){if(error.code==="stale"){$("fact-correction-error").textContent=t("stale");factTarget=null;}throw error;}
 }
+async function useSelectedBrief(){
+ const brief=selectedMemory && parseBrief(selectedMemory);if(!brief)throw new Error(t("invalidBrief"));workshopMemory={...selectedMemory};workshopBrief=brief;markPlanObsolete();renderBrief();await prepareWorkshop();
+}
+async function newSession(announce=true){
+ if(session){const {response}=await readHttp("/mcp",{method:"DELETE",headers:rpcHeaders()});if(!response.ok && response.status!==404)throw new Error("HTTP "+response.status);}
+ session=null;protocol=null;connected=false;memoryOffset=0;totalMemories=0;selectedMemory=null;selectedHistory=null;factTarget=null;briefEditTarget=null;workshopMemory=null;workshopBrief=null;activePlan=null;previousPlan=null;planObsolete=false;uncertainWrite=false;lastMutationReceipt=null;searchResults=null;inventory.clear();searchInventory.clear();
+ $("next-page").dataset.offset="";$("brief-editor").hidden=true;$("fact-editor").hidden=true;$("proto").innerHTML="";$("log").innerHTML="";if(window.speechSynthesis)window.speechSynthesis.cancel();
+ renderBrief();renderPlan();renderInventory();renderMemoryDetail();await connect();await refreshMemories();if(announce)feedback(storageMode==="local_durable"?"reconnected":"newSessionReady","success");
+}
+function localVoice(){return window.speechSynthesis?.getVoices().find(v=>v.localService && v.lang.toLowerCase().split("-")[0]===language) || null;}
+function updateVoice(){const available=Boolean(localVoice() && window.SpeechSynthesisUtterance);if(!available)voiceOn=false;$("voice").disabled=!available;$("voice").title=t(available?"voiceAvailable":"voiceUnavailable");$("voice").textContent=t(voiceOn?"voiceOn":"voiceOff");$("voice").setAttribute("aria-pressed",String(voiceOn));}
+function speakReply(text){const voice=localVoice();if(!voiceOn || !voice || !window.SpeechSynthesisUtterance)return;const utterance=new window.SpeechSynthesisUtterance(text.slice(0,900));utterance.voice=voice;utterance.lang=voice.lang;window.speechSynthesis.cancel();window.speechSynthesis.speak(utterance);}
 function start(){
-  $("send").onclick = () => {
-    const value = $("inp").value;
-    if (!value.trim()) return;
-    interaction(async () => { $("inp").value = ""; await handle(value); });
-  };
-  $("inp").addEventListener("keydown", event => { if (event.key === "Enter") $("send").click(); });
-  $("demo").onclick = () => interaction(playDemo);
-  $("new-session").onclick = () => interaction(() => newSession());
-  $("prev-page").onclick = () => interaction(async () => {
-    memoryOffset = Math.max(0, memoryOffset - pageSize); await refreshMemories();
-  });
-  $("next-page").onclick = () => interaction(async () => {
-    const offset = $("next-page").dataset.offset;
-    if (offset !== "") { memoryOffset = Number(offset); await refreshMemories(); }
-  });
-  log.addEventListener("click", event => {
-    const button = event.target.closest("button[data-choice-token]");
-    if (button) interaction(() => chooseMemory(button.dataset.choiceToken));
-  });
-  memsBox.addEventListener("click", event => {
-    const button = event.target.closest("button[data-edit-id]");
-    if (button) interaction(() => editFromInventory(button.dataset.editId));
-  });
-  $("voice").onclick = () => {
-    voiceOn = !voiceOn && Boolean(localVoice());
-    if (!voiceOn && window.speechSynthesis) window.speechSynthesis.cancel();
-    updateVoiceControl();
-  };
-  if (window.speechSynthesis) window.speechSynthesis.addEventListener("voiceschanged", updateVoiceControl);
-  updateVoiceControl();
-  interaction(async () => {
-    await connect(); await refreshMemories();
-    addMsg("alexa", storageMode === "local_durable" ?
-      "This local store keeps memories across reconnects and restarts. Reconnect does not erase them. " +
-      "The scripted demo is disabled here. Corrections require your choice; optional local voice starts off." :
-      "Try the synthetic demo or add a made-up fact. This temporary session ends after 30 minutes idle or server stop; " +
-      "refresh starts a new one. Questions search; corrections require your choice. Optional local voice starts off.");
-    document.querySelector(".hint").textContent = storageMode === "local_durable" ?
-      "Local durable storage · reconnect preserves memory · declared sources are not verified documents · no model or keys" :
-      "Synthetic session only · temporary until 30 minutes idle or server stop · refresh starts empty · corrections require your choice";
-  });
+ if(window.location){const url=new URL(window.location.href),requested=url.searchParams.get("lang"),browser=typeof navigator!=="undefined"?(navigator.languages?.[0] || navigator.language || "fr"):"fr";language=["fr","en"].includes(requested)?requested:/^fr(?:-|$)/i.test(browser)?"fr":"en";}
+ renderLanguage();
+ $("language").addEventListener("change",()=>{language=$("language").value;if(window.location && window.history){const url=new URL(window.location.href);url.searchParams.set("lang",language);window.history.replaceState(null,"",url);}renderLanguage();});
+ $("prepare-example").onclick=()=>interaction(createWorkshopExample,"planning");
+ $("plan-result").addEventListener("click",event=>{const button=event.target.closest("button");if(!button)return;if(button.dataset.strategy)interaction(()=>prepareWorkshop(button.dataset.strategy),"planning");else if(button.hasAttribute("data-change-room"))interaction(changeRoom,"saving");else if(button.hasAttribute("data-download"))interaction(downloadPlan,"reading");else if(button.hasAttribute("data-recalculate"))interaction(()=>prepareWorkshop(),"planning");else if(button.hasAttribute("data-edit-brief"))openBriefEditor();});
+ $("edit-brief").onclick=openBriefEditor;$("refresh-brief").onclick=()=>interaction(refreshWorkshop,"reading");
+ $("cancel-brief").onclick=()=>{briefEditTarget=null;$("brief-editor").hidden=true;feedback("cancelled");updateControls();};
+ $("review-edit-version").onclick=()=>interaction(async()=>{await refreshWorkshop();briefEditTarget={...workshopMemory};$("brief-error").textContent="";$("review-edit-version").hidden=true;renderEditContexts();},"reading");
+ $("brief-form").addEventListener("submit",event=>{event.preventDefault();const brief=readBriefForm(),source=refs($("brief-source").value);if(!source.length || !brief.title || !brief.event_date || !brief.start || !brief.end || !Number.isInteger(brief.participants) || brief.participants<1 || brief.participants>500 || !Number.isInteger(brief.capacity) || brief.capacity<1 || brief.capacity>500 || !Number.isInteger(brief.session_minutes) || brief.session_minutes<1 || brief.session_minutes>480 || !Number.isInteger(brief.transition_minutes) || brief.transition_minutes<0 || brief.transition_minutes>120 || brief.end<=brief.start){$("brief-error").textContent=t("invalidBrief");$("brief-source").focus();return;}interaction(()=>saveBrief(brief,source),"saving");});
+ $("fact-form").addEventListener("submit",event=>{
+ event.preventDefault();const value={title:$("fact-title").value.trim(),content:$("fact-content").value.trim(),source_refs:refs($("fact-source").value)};let first=null;
+ for(const [key,id,error] of [["title","fact-title","missingTitle"],["content","fact-content","missingContent"],["source_refs","fact-source","missingSource"]]){const invalid=key==="source_refs"?!value[key].length:!value[key];$(id+"-error").textContent=invalid?t(error):"";if(invalid){$(id).setAttribute("aria-invalid","true");first=first || id;}else $(id).removeAttribute("aria-invalid");}
+ if(first){$(first).focus();return;}interaction(async()=>{const row=await rememberFact(value);$("fact-form").reset();await refreshMemories();await selectMemory(row);speakReply(t("saved"));},"saving");
+ });
+ $("search-form").addEventListener("submit",event=>{event.preventDefault();interaction(()=>searchMemories($("search-query").value),"searching");});
+ $("mems").addEventListener("click",event=>{const button=event.target.closest("button[data-memory-id]");if(!button)return;const row=(button.dataset.memoryScope==="search"?searchInventory:inventory).get(button.dataset.memoryId);if(row)interaction(()=>selectMemory(row),"reading");});
+ $("memory-detail").addEventListener("click",event=>{if(event.target.closest("[data-correct-fact]"))openFactCorrection();else if(event.target.closest("[data-use-brief]"))interaction(useSelectedBrief,"planning");});
+ $("fact-correction-form").addEventListener("submit",event=>{event.preventDefault();const value={content:$("fact-replacement").value.trim(),source_refs:refs($("fact-correction-source").value)};if(!value.content || !value.source_refs.length){$("fact-correction-error").textContent=t(!value.content?"missingContent":"missingSource");$(!value.content?"fact-replacement":"fact-correction-source").focus();return;}interaction(()=>applyFactCorrection(value),"saving");});
+ $("cancel-fact-correction").onclick=()=>{factTarget=null;$("fact-editor").hidden=true;feedback("cancelled");updateControls();};
+ $("prev-page").onclick=()=>interaction(async()=>{memoryOffset=Math.max(0,memoryOffset-pageSize);await refreshMemories();});
+ $("next-page").onclick=()=>interaction(async()=>{const offset=$("next-page").dataset.offset;if(offset!==""){memoryOffset=Number(offset);await refreshMemories();}});
+ $("refresh").onclick=()=>interaction(async()=>{await refreshMemories();if(workshopMemory)await refreshWorkshop();feedback("refreshed","success");},"reading");
+ $("reconnect-now").onclick=()=>$("new-session").click();
+ $("new-session").onclick=()=>interaction(async()=>{if(storageMode==="temporary_demo" && totalMemories && window.confirm && !window.confirm(t("confirmSession")))return;if(hasDraft() && window.confirm && !window.confirm(t("confirmDraft")))return;await newSession();$("fact-form").reset();$("brief-form").reset();},"reading");
+ $("voice").onclick=()=>{voiceOn=!voiceOn && Boolean(localVoice());if(!voiceOn && window.speechSynthesis)window.speechSynthesis.cancel();updateVoice();};
+ if(window.speechSynthesis)window.speechSynthesis.addEventListener("voiceschanged",updateVoice);
+ window.addEventListener("beforeunload",event=>{if(hasDraft()){event.preventDefault();event.returnValue="";}});
+ interaction(async()=>{try{await connect();await refreshMemories();feedback("welcome");}catch(error){connected=false;setConnection("error");feedback(error.code==="missing-tool"?"backendMissing":"connectFailed",error.code==="missing-tool"?"warning":"error");}});
 }
 start();
 </script>
