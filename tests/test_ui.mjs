@@ -359,3 +359,80 @@ test("voice is off by default, uses the selected language's installed local voic
   c.run("storageMode='local_durable'");await assert.rejects(c.context.createWorkshopExample(),/durable/);
  }finally{await c.close();}
 });
+
+test("changed-capacity impact uses the actual old and current brief and exposes both tradeoffs",async()=>{
+ const c=client();
+ try{
+  await selectWorkshop(c);await c.context.changeRoom();
+  const impact=JSON.parse(c.run("JSON.stringify(getPlanImpact(activePlan))"));
+  assert.deepEqual(impact.changes,[{key:"capacity",label:"capacity",before:12,after:6}]);
+  assert.deepEqual(impact.consequences,[{kind:"capacity",largest_group:12,current_capacity:6}]);
+  const markup=c.get("plan-result").innerHTML;
+  assert.match(markup,/12 places/);assert.match(markup,/6 places/);
+  assert.match(markup,/12 personnes peuvent participer/);
+  assert.match(markup,/6 personnes restent sur liste d’attente/);
+  assert.match(markup,/>105 min</);assert.match(markup,/>45 min</);
+  assert.match(markup,/15 min de marge/);assert.match(markup,/75 min de marge/);
+  assert.match(markup,/Vous devrez choisir les personnes/);
+ }finally{await c.close();}
+});
+
+test("impact and option consequences adapt to an 18-person brief rather than fixed demo numbers",async()=>{
+ const c=client();
+ try{
+  const initial=brief({participants:18,capacity:18,session_minutes:30,transition_minutes:10,start:"09:00",end:"11:00"});
+  await selectWorkshop(c,initial);c.context.openBriefEditor();
+  await c.context.saveBrief({...initial,capacity:10},["synthetic:ten-seat room"]);
+  const impact=JSON.parse(c.run("JSON.stringify(getPlanImpact(activePlan))"));
+  assert.equal(impact.changes[0].before,18);assert.equal(impact.changes[0].after,10);
+  assert.equal(impact.consequences[0].largest_group,18);
+  const markup=c.get("plan-result").innerHTML;
+  assert.match(markup,/18 personnes peuvent participer/);assert.match(markup,/8 personnes restent sur liste d’attente/);
+  assert.match(markup,/>70 min</);assert.match(markup,/>30 min</);
+  c.run("language='en'");c.context.renderLanguage();
+  assert.match(c.get("plan-result").innerHTML,/8 people remain on the waitlist/);
+  assert.match(c.get("plan-result").innerHTML,/50 min spare/);
+ }finally{await c.close();}
+});
+
+test("an impossible changed window explains the old conflict without calling an infeasible option possible",async()=>{
+ const c=client();
+ try{
+  await selectWorkshop(c);c.context.openBriefEditor();
+  await c.context.saveBrief(brief({capacity:6,end:"10:30"}),["synthetic:shorter window"]);
+  assert.equal(c.run("activePlan.status"),"blocked");
+  const impact=JSON.parse(c.run("JSON.stringify(getPlanImpact(activePlan))"));
+  assert.deepEqual(impact.consequences.map(row=>row.kind),["capacity","window"]);
+  const markup=c.get("plan-result").innerHTML;
+  assert.match(markup,/hors du créneau actuel 10:00–10:30/);
+  assert.match(markup,/il manque 75 min/);assert.match(markup,/il manque 15 min/);
+  assert.doesNotMatch(markup,/personnes peuvent participer/);
+  assert.match(markup,/Objectif : 12 personnes/);assert.doesNotMatch(markup,/data-download/);
+ }finally{await c.close();}
+});
+
+test("different calendar contexts and unrelated workshop IDs are not compared as the same local window",async()=>{
+ const c=client();
+ try{
+  await selectWorkshop(c);c.context.openBriefEditor();
+  await c.context.saveBrief(brief({event_date:"2026-11-07",timezone:"UTC",start:"08:00",end:"10:00"}),["synthetic:new date and zone"]);
+  const impact=JSON.parse(c.run("JSON.stringify(getPlanImpact(activePlan))"));
+  assert.equal(impact.consequences.some(row=>row.kind==="window"),false);
+  assert.match(c.get("plan-result").innerHTML,/Europe\/Paris/);
+  await selectWorkshop(c,brief({title:"Another workshop",capacity:6}));
+  assert.equal(c.run("getPlanImpact(activePlan)"),null);
+  assert.doesNotMatch(c.get("plan-result").innerHTML,/Depuis le plan/);
+ }finally{await c.close();}
+});
+
+test("additional real consequences remain available when several constraints change",async()=>{
+ const c=client();
+ try{
+  await selectWorkshop(c);c.context.openBriefEditor();
+  await c.context.saveBrief(brief({participants:20,capacity:6,end:"10:30",session_minutes:60}),["synthetic:multiple constraints"]);
+  assert.equal(c.run("getPlanImpact(activePlan).consequences.length"),4);
+  assert.match(c.get("plan-result").innerHTML,/Autres conséquences \(2\)/);
+  assert.match(c.get("plan-result").innerHTML,/durée demandée par séance passe de 45 à 60 min/);
+  assert.match(c.get("plan-result").innerHTML,/20 personnes/);
+ }finally{await c.close();}
+});

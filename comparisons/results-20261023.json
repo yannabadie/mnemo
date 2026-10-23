@@ -1,0 +1,949 @@
+{
+  "schema": "mnemo-competent-deterministic-comparison/v1",
+  "scope": "Five local synthetic conditions; real Mnemo MemoryStore/planner/export functions versus an independently implemented deterministic versioned reference. No browser, native Alexa, third-party service or LLM execution.",
+  "fixture": {
+    "schema": "workshop-brief-v1",
+    "title": "Recurring workshop comparison",
+    "participants": 12,
+    "capacity": 12,
+    "event_date": "2026-11-06",
+    "timezone": "Europe/Paris",
+    "start": "10:00",
+    "end": "12:00",
+    "session_minutes": 45,
+    "transition_minutes": 15
+  },
+  "initial_sources": [
+    "synthetic:organizer initial brief"
+  ],
+  "changed_sources": [
+    "synthetic:organizer initial brief",
+    "synthetic:organizer corrected room capacity"
+  ],
+  "preconditions": "Same structured facts, limits, choices, date/window and sources. Both tools reject an export whose current version/hash differs. A successful fresh read before an intervening correction does not bypass either export guard.",
+  "cases": [
+    {
+      "case": "unchanged",
+      "changes": null,
+      "explicit_test_choice": null,
+      "reference": {
+        "initial_control": {
+          "status": "exported",
+          "sessions": [
+            {
+              "group": 1,
+              "participants": 12,
+              "start": "10:00",
+              "end": "10:45"
+            }
+          ],
+          "scheduled_participants": 12,
+          "waitlisted_participants": 0,
+          "version": 1,
+          "source_refs": [
+            "synthetic:organizer initial brief"
+          ]
+        },
+        "current": {
+          "status": "ready",
+          "strategy": "single",
+          "options": [
+            {
+              "strategy": "split",
+              "feasible": true,
+              "required_sessions": 1,
+              "required_minutes": 45,
+              "available_minutes": 120,
+              "planned_participants": 12,
+              "waitlisted_participants": 0
+            },
+            {
+              "strategy": "limit",
+              "feasible": true,
+              "required_sessions": 1,
+              "required_minutes": 45,
+              "available_minutes": 120,
+              "planned_participants": 12,
+              "waitlisted_participants": 0
+            }
+          ],
+          "sessions": [
+            {
+              "group": 1,
+              "participants": 12,
+              "start": "10:00",
+              "end": "10:45"
+            }
+          ],
+          "scheduled_participants": 12,
+          "waitlisted_participants": 0
+        },
+        "export": {
+          "status": "exported",
+          "sessions": [
+            {
+              "group": 1,
+              "participants": 12,
+              "start": "10:00",
+              "end": "10:45"
+            }
+          ],
+          "scheduled_participants": 12,
+          "waitlisted_participants": 0,
+          "version": 1,
+          "source_refs": [
+            "synthetic:organizer initial brief"
+          ]
+        }
+      },
+      "mnemo": {
+        "initial_control": {
+          "status": "exported",
+          "sessions": [
+            {
+              "group": 1,
+              "start": "10:00",
+              "end": "10:45",
+              "participants": 12
+            }
+          ],
+          "scheduled_participants": 12,
+          "waitlisted_participants": 0,
+          "version": 1,
+          "source_refs": [
+            "synthetic:organizer initial brief"
+          ]
+        },
+        "current": {
+          "status": "ready",
+          "strategy": "single",
+          "options": [
+            {
+              "strategy": "split",
+              "feasible": true,
+              "required_sessions": 1,
+              "required_minutes": 45,
+              "available_minutes": 120,
+              "planned_participants": 12,
+              "waitlisted_participants": 0
+            },
+            {
+              "strategy": "limit",
+              "feasible": true,
+              "required_sessions": 1,
+              "required_minutes": 45,
+              "available_minutes": 120,
+              "planned_participants": 12,
+              "waitlisted_participants": 0
+            }
+          ],
+          "sessions": [
+            {
+              "group": 1,
+              "participants": 12,
+              "start": "10:00",
+              "end": "10:45"
+            }
+          ],
+          "scheduled_participants": 12,
+          "waitlisted_participants": 0
+        },
+        "export": {
+          "status": "exported",
+          "sessions": [
+            {
+              "group": 1,
+              "start": "10:00",
+              "end": "10:45",
+              "participants": 12
+            }
+          ],
+          "scheduled_participants": 12,
+          "waitlisted_participants": 0,
+          "version": 1,
+          "source_refs": [
+            "synthetic:organizer initial brief"
+          ]
+        }
+      },
+      "functional_results_equal": true,
+      "required_intervention_for_both": [],
+      "intervention_measurement": "Contract-level actions listed; choices were supplied by this script, not observed users."
+    },
+    {
+      "case": "capacity_reduced_split",
+      "changes": {
+        "capacity": 6
+      },
+      "explicit_test_choice": "split",
+      "reference": {
+        "initial_control": {
+          "status": "exported",
+          "sessions": [
+            {
+              "group": 1,
+              "participants": 12,
+              "start": "10:00",
+              "end": "10:45"
+            }
+          ],
+          "scheduled_participants": 12,
+          "waitlisted_participants": 0,
+          "version": 1,
+          "source_refs": [
+            "synthetic:organizer initial brief"
+          ]
+        },
+        "old_receipt": {
+          "status": "rejected_stale",
+          "error_type": "RevisionChanged",
+          "message": "The prepared revision is no longer current"
+        },
+        "before_choice": {
+          "status": "needs_decision",
+          "strategy": null,
+          "options": [
+            {
+              "strategy": "split",
+              "feasible": true,
+              "required_sessions": 2,
+              "required_minutes": 105,
+              "available_minutes": 120,
+              "planned_participants": 12,
+              "waitlisted_participants": 0
+            },
+            {
+              "strategy": "limit",
+              "feasible": true,
+              "required_sessions": 1,
+              "required_minutes": 45,
+              "available_minutes": 120,
+              "planned_participants": 6,
+              "waitlisted_participants": 6
+            }
+          ],
+          "sessions": [],
+          "scheduled_participants": 0,
+          "waitlisted_participants": 0
+        },
+        "current": {
+          "status": "ready",
+          "strategy": "split",
+          "options": [
+            {
+              "strategy": "split",
+              "feasible": true,
+              "required_sessions": 2,
+              "required_minutes": 105,
+              "available_minutes": 120,
+              "planned_participants": 12,
+              "waitlisted_participants": 0
+            },
+            {
+              "strategy": "limit",
+              "feasible": true,
+              "required_sessions": 1,
+              "required_minutes": 45,
+              "available_minutes": 120,
+              "planned_participants": 6,
+              "waitlisted_participants": 6
+            }
+          ],
+          "sessions": [
+            {
+              "group": 1,
+              "participants": 6,
+              "start": "10:00",
+              "end": "10:45"
+            },
+            {
+              "group": 2,
+              "participants": 6,
+              "start": "11:00",
+              "end": "11:45"
+            }
+          ],
+          "scheduled_participants": 12,
+          "waitlisted_participants": 0
+        },
+        "export": {
+          "status": "exported",
+          "sessions": [
+            {
+              "group": 1,
+              "participants": 6,
+              "start": "10:00",
+              "end": "10:45"
+            },
+            {
+              "group": 2,
+              "participants": 6,
+              "start": "11:00",
+              "end": "11:45"
+            }
+          ],
+          "scheduled_participants": 12,
+          "waitlisted_participants": 0,
+          "version": 2,
+          "source_refs": [
+            "synthetic:organizer initial brief",
+            "synthetic:organizer corrected room capacity"
+          ]
+        }
+      },
+      "mnemo": {
+        "initial_control": {
+          "status": "exported",
+          "sessions": [
+            {
+              "group": 1,
+              "start": "10:00",
+              "end": "10:45",
+              "participants": 12
+            }
+          ],
+          "scheduled_participants": 12,
+          "waitlisted_participants": 0,
+          "version": 1,
+          "source_refs": [
+            "synthetic:organizer initial brief"
+          ]
+        },
+        "old_receipt": {
+          "status": "rejected_stale",
+          "error_type": "VersionConflict",
+          "message": "stale plan: brief mem_8151b9da6ee63bc2 changed after version 1; this plan was not exported or recalculated; re-read the brief and prepare a new plan"
+        },
+        "before_choice": {
+          "status": "needs_decision",
+          "strategy": null,
+          "options": [
+            {
+              "strategy": "split",
+              "feasible": true,
+              "required_sessions": 2,
+              "required_minutes": 105,
+              "available_minutes": 120,
+              "planned_participants": 12,
+              "waitlisted_participants": 0
+            },
+            {
+              "strategy": "limit",
+              "feasible": true,
+              "required_sessions": 1,
+              "required_minutes": 45,
+              "available_minutes": 120,
+              "planned_participants": 6,
+              "waitlisted_participants": 6
+            }
+          ],
+          "sessions": [],
+          "scheduled_participants": 0,
+          "waitlisted_participants": 0
+        },
+        "current": {
+          "status": "ready",
+          "strategy": "split",
+          "options": [
+            {
+              "strategy": "split",
+              "feasible": true,
+              "required_sessions": 2,
+              "required_minutes": 105,
+              "available_minutes": 120,
+              "planned_participants": 12,
+              "waitlisted_participants": 0
+            },
+            {
+              "strategy": "limit",
+              "feasible": true,
+              "required_sessions": 1,
+              "required_minutes": 45,
+              "available_minutes": 120,
+              "planned_participants": 6,
+              "waitlisted_participants": 6
+            }
+          ],
+          "sessions": [
+            {
+              "group": 1,
+              "participants": 6,
+              "start": "10:00",
+              "end": "10:45"
+            },
+            {
+              "group": 2,
+              "participants": 6,
+              "start": "11:00",
+              "end": "11:45"
+            }
+          ],
+          "scheduled_participants": 12,
+          "waitlisted_participants": 0
+        },
+        "export": {
+          "status": "exported",
+          "sessions": [
+            {
+              "group": 1,
+              "start": "10:00",
+              "end": "10:45",
+              "participants": 6
+            },
+            {
+              "group": 2,
+              "start": "11:00",
+              "end": "11:45",
+              "participants": 6
+            }
+          ],
+          "scheduled_participants": 12,
+          "waitlisted_participants": 0,
+          "version": 2,
+          "source_refs": [
+            "synthetic:organizer initial brief",
+            "synthetic:organizer corrected room capacity"
+          ]
+        }
+      },
+      "functional_results_equal": true,
+      "required_intervention_for_both": [
+        "Record the capacity change",
+        "Explicitly choose split"
+      ],
+      "intervention_measurement": "Contract-level actions listed; choices were supplied by this script, not observed users."
+    },
+    {
+      "case": "capacity_reduced_limit",
+      "changes": {
+        "capacity": 6
+      },
+      "explicit_test_choice": "limit",
+      "reference": {
+        "initial_control": {
+          "status": "exported",
+          "sessions": [
+            {
+              "group": 1,
+              "participants": 12,
+              "start": "10:00",
+              "end": "10:45"
+            }
+          ],
+          "scheduled_participants": 12,
+          "waitlisted_participants": 0,
+          "version": 1,
+          "source_refs": [
+            "synthetic:organizer initial brief"
+          ]
+        },
+        "old_receipt": {
+          "status": "rejected_stale",
+          "error_type": "RevisionChanged",
+          "message": "The prepared revision is no longer current"
+        },
+        "before_choice": {
+          "status": "needs_decision",
+          "strategy": null,
+          "options": [
+            {
+              "strategy": "split",
+              "feasible": true,
+              "required_sessions": 2,
+              "required_minutes": 105,
+              "available_minutes": 120,
+              "planned_participants": 12,
+              "waitlisted_participants": 0
+            },
+            {
+              "strategy": "limit",
+              "feasible": true,
+              "required_sessions": 1,
+              "required_minutes": 45,
+              "available_minutes": 120,
+              "planned_participants": 6,
+              "waitlisted_participants": 6
+            }
+          ],
+          "sessions": [],
+          "scheduled_participants": 0,
+          "waitlisted_participants": 0
+        },
+        "current": {
+          "status": "ready",
+          "strategy": "limit",
+          "options": [
+            {
+              "strategy": "split",
+              "feasible": true,
+              "required_sessions": 2,
+              "required_minutes": 105,
+              "available_minutes": 120,
+              "planned_participants": 12,
+              "waitlisted_participants": 0
+            },
+            {
+              "strategy": "limit",
+              "feasible": true,
+              "required_sessions": 1,
+              "required_minutes": 45,
+              "available_minutes": 120,
+              "planned_participants": 6,
+              "waitlisted_participants": 6
+            }
+          ],
+          "sessions": [
+            {
+              "group": 1,
+              "participants": 6,
+              "start": "10:00",
+              "end": "10:45"
+            }
+          ],
+          "scheduled_participants": 6,
+          "waitlisted_participants": 6
+        },
+        "export": {
+          "status": "exported",
+          "sessions": [
+            {
+              "group": 1,
+              "participants": 6,
+              "start": "10:00",
+              "end": "10:45"
+            }
+          ],
+          "scheduled_participants": 6,
+          "waitlisted_participants": 6,
+          "version": 2,
+          "source_refs": [
+            "synthetic:organizer initial brief",
+            "synthetic:organizer corrected room capacity"
+          ]
+        }
+      },
+      "mnemo": {
+        "initial_control": {
+          "status": "exported",
+          "sessions": [
+            {
+              "group": 1,
+              "start": "10:00",
+              "end": "10:45",
+              "participants": 12
+            }
+          ],
+          "scheduled_participants": 12,
+          "waitlisted_participants": 0,
+          "version": 1,
+          "source_refs": [
+            "synthetic:organizer initial brief"
+          ]
+        },
+        "old_receipt": {
+          "status": "rejected_stale",
+          "error_type": "VersionConflict",
+          "message": "stale plan: brief mem_ba7a5595a832515a changed after version 1; this plan was not exported or recalculated; re-read the brief and prepare a new plan"
+        },
+        "before_choice": {
+          "status": "needs_decision",
+          "strategy": null,
+          "options": [
+            {
+              "strategy": "split",
+              "feasible": true,
+              "required_sessions": 2,
+              "required_minutes": 105,
+              "available_minutes": 120,
+              "planned_participants": 12,
+              "waitlisted_participants": 0
+            },
+            {
+              "strategy": "limit",
+              "feasible": true,
+              "required_sessions": 1,
+              "required_minutes": 45,
+              "available_minutes": 120,
+              "planned_participants": 6,
+              "waitlisted_participants": 6
+            }
+          ],
+          "sessions": [],
+          "scheduled_participants": 0,
+          "waitlisted_participants": 0
+        },
+        "current": {
+          "status": "ready",
+          "strategy": "limit",
+          "options": [
+            {
+              "strategy": "split",
+              "feasible": true,
+              "required_sessions": 2,
+              "required_minutes": 105,
+              "available_minutes": 120,
+              "planned_participants": 12,
+              "waitlisted_participants": 0
+            },
+            {
+              "strategy": "limit",
+              "feasible": true,
+              "required_sessions": 1,
+              "required_minutes": 45,
+              "available_minutes": 120,
+              "planned_participants": 6,
+              "waitlisted_participants": 6
+            }
+          ],
+          "sessions": [
+            {
+              "group": 1,
+              "participants": 6,
+              "start": "10:00",
+              "end": "10:45"
+            }
+          ],
+          "scheduled_participants": 6,
+          "waitlisted_participants": 6
+        },
+        "export": {
+          "status": "exported",
+          "sessions": [
+            {
+              "group": 1,
+              "start": "10:00",
+              "end": "10:45",
+              "participants": 6
+            }
+          ],
+          "scheduled_participants": 6,
+          "waitlisted_participants": 6,
+          "version": 2,
+          "source_refs": [
+            "synthetic:organizer initial brief",
+            "synthetic:organizer corrected room capacity"
+          ]
+        }
+      },
+      "functional_results_equal": true,
+      "required_intervention_for_both": [
+        "Record the capacity change",
+        "Explicitly choose limit",
+        "Choose the six waiting individuals outside the tool"
+      ],
+      "intervention_measurement": "Contract-level actions listed; choices were supplied by this script, not observed users."
+    },
+    {
+      "case": "impossible_window",
+      "changes": {
+        "capacity": 6,
+        "end": "10:30"
+      },
+      "explicit_test_choice": null,
+      "reference": {
+        "initial_control": {
+          "status": "exported",
+          "sessions": [
+            {
+              "group": 1,
+              "participants": 12,
+              "start": "10:00",
+              "end": "10:45"
+            }
+          ],
+          "scheduled_participants": 12,
+          "waitlisted_participants": 0,
+          "version": 1,
+          "source_refs": [
+            "synthetic:organizer initial brief"
+          ]
+        },
+        "old_receipt": {
+          "status": "rejected_stale",
+          "error_type": "RevisionChanged",
+          "message": "The prepared revision is no longer current"
+        },
+        "before_choice": {
+          "status": "blocked",
+          "strategy": null,
+          "options": [
+            {
+              "strategy": "split",
+              "feasible": false,
+              "required_sessions": 2,
+              "required_minutes": 105,
+              "available_minutes": 30,
+              "planned_participants": 12,
+              "waitlisted_participants": 0
+            },
+            {
+              "strategy": "limit",
+              "feasible": false,
+              "required_sessions": 1,
+              "required_minutes": 45,
+              "available_minutes": 30,
+              "planned_participants": 6,
+              "waitlisted_participants": 6
+            }
+          ],
+          "sessions": [],
+          "scheduled_participants": 0,
+          "waitlisted_participants": 0
+        },
+        "current": {
+          "status": "blocked",
+          "strategy": null,
+          "options": [
+            {
+              "strategy": "split",
+              "feasible": false,
+              "required_sessions": 2,
+              "required_minutes": 105,
+              "available_minutes": 30,
+              "planned_participants": 12,
+              "waitlisted_participants": 0
+            },
+            {
+              "strategy": "limit",
+              "feasible": false,
+              "required_sessions": 1,
+              "required_minutes": 45,
+              "available_minutes": 30,
+              "planned_participants": 6,
+              "waitlisted_participants": 6
+            }
+          ],
+          "sessions": [],
+          "scheduled_participants": 0,
+          "waitlisted_participants": 0
+        },
+        "export": {
+          "status": "not_available_no_ready_plan"
+        }
+      },
+      "mnemo": {
+        "initial_control": {
+          "status": "exported",
+          "sessions": [
+            {
+              "group": 1,
+              "start": "10:00",
+              "end": "10:45",
+              "participants": 12
+            }
+          ],
+          "scheduled_participants": 12,
+          "waitlisted_participants": 0,
+          "version": 1,
+          "source_refs": [
+            "synthetic:organizer initial brief"
+          ]
+        },
+        "old_receipt": {
+          "status": "rejected_stale",
+          "error_type": "VersionConflict",
+          "message": "stale plan: brief mem_43e32780425470ee changed after version 1; this plan was not exported or recalculated; re-read the brief and prepare a new plan"
+        },
+        "before_choice": {
+          "status": "blocked",
+          "strategy": null,
+          "options": [
+            {
+              "strategy": "split",
+              "feasible": false,
+              "required_sessions": 2,
+              "required_minutes": 105,
+              "available_minutes": 30,
+              "planned_participants": 12,
+              "waitlisted_participants": 0
+            },
+            {
+              "strategy": "limit",
+              "feasible": false,
+              "required_sessions": 1,
+              "required_minutes": 45,
+              "available_minutes": 30,
+              "planned_participants": 6,
+              "waitlisted_participants": 6
+            }
+          ],
+          "sessions": [],
+          "scheduled_participants": 0,
+          "waitlisted_participants": 0
+        },
+        "current": {
+          "status": "blocked",
+          "strategy": null,
+          "options": [
+            {
+              "strategy": "split",
+              "feasible": false,
+              "required_sessions": 2,
+              "required_minutes": 105,
+              "available_minutes": 30,
+              "planned_participants": 12,
+              "waitlisted_participants": 0
+            },
+            {
+              "strategy": "limit",
+              "feasible": false,
+              "required_sessions": 1,
+              "required_minutes": 45,
+              "available_minutes": 30,
+              "planned_participants": 6,
+              "waitlisted_participants": 6
+            }
+          ],
+          "sessions": [],
+          "scheduled_participants": 0,
+          "waitlisted_participants": 0
+        },
+        "export": {
+          "status": "not_available_no_ready_plan"
+        }
+      },
+      "functional_results_equal": true,
+      "required_intervention_for_both": [
+        "Change the constraints; neither option fits"
+      ],
+      "intervention_measurement": "Contract-level actions listed; choices were supplied by this script, not observed users."
+    },
+    {
+      "case": "change_after_successful_fresh_read",
+      "changes": {
+        "capacity": 6
+      },
+      "explicit_test_choice": null,
+      "reference": {
+        "initial_control": {
+          "status": "exported",
+          "sessions": [
+            {
+              "group": 1,
+              "participants": 12,
+              "start": "10:00",
+              "end": "10:45"
+            }
+          ],
+          "scheduled_participants": 12,
+          "waitlisted_participants": 0,
+          "version": 1,
+          "source_refs": [
+            "synthetic:organizer initial brief"
+          ]
+        },
+        "fresh_read_matched": true,
+        "old_receipt": {
+          "status": "rejected_stale",
+          "error_type": "RevisionChanged",
+          "message": "The prepared revision is no longer current"
+        },
+        "before_choice": {
+          "status": "needs_decision",
+          "strategy": null,
+          "options": [
+            {
+              "strategy": "split",
+              "feasible": true,
+              "required_sessions": 2,
+              "required_minutes": 105,
+              "available_minutes": 120,
+              "planned_participants": 12,
+              "waitlisted_participants": 0
+            },
+            {
+              "strategy": "limit",
+              "feasible": true,
+              "required_sessions": 1,
+              "required_minutes": 45,
+              "available_minutes": 120,
+              "planned_participants": 6,
+              "waitlisted_participants": 6
+            }
+          ],
+          "sessions": [],
+          "scheduled_participants": 0,
+          "waitlisted_participants": 0
+        }
+      },
+      "mnemo": {
+        "initial_control": {
+          "status": "exported",
+          "sessions": [
+            {
+              "group": 1,
+              "start": "10:00",
+              "end": "10:45",
+              "participants": 12
+            }
+          ],
+          "scheduled_participants": 12,
+          "waitlisted_participants": 0,
+          "version": 1,
+          "source_refs": [
+            "synthetic:organizer initial brief"
+          ]
+        },
+        "fresh_read_matched": true,
+        "old_receipt": {
+          "status": "rejected_stale",
+          "error_type": "VersionConflict",
+          "message": "stale plan: brief mem_0d8ce7bf74f67082 changed after version 1; this plan was not exported or recalculated; re-read the brief and prepare a new plan"
+        },
+        "before_choice": {
+          "status": "needs_decision",
+          "strategy": null,
+          "options": [
+            {
+              "strategy": "split",
+              "feasible": true,
+              "required_sessions": 2,
+              "required_minutes": 105,
+              "available_minutes": 120,
+              "planned_participants": 12,
+              "waitlisted_participants": 0
+            },
+            {
+              "strategy": "limit",
+              "feasible": true,
+              "required_sessions": 1,
+              "required_minutes": 45,
+              "available_minutes": 120,
+              "planned_participants": 6,
+              "waitlisted_participants": 6
+            }
+          ],
+          "sessions": [],
+          "scheduled_participants": 0,
+          "waitlisted_participants": 0
+        }
+      },
+      "functional_results_equal": true,
+      "required_intervention_for_both": [
+        "Re-read the changed brief and make a new explicit choice"
+      ],
+      "intervention_measurement": "Contract-level actions listed; choices were supplied by this script, not observed users."
+    }
+  ],
+  "summary": {
+    "conditions": 5,
+    "functional_ties": 5,
+    "unexpected_successes_on_blocked_or_stale": 0,
+    "unjustified_rejections_on_valid_controls": 0,
+    "measured_functional_superiority": false,
+    "finding": "The competent deterministic reference matches Mnemo on these constraints and version checks. The observed difference is Mnemo's MCP/UI packaging and explanation; no user benefit or time saving was measured."
+  },
+  "not_measured": [
+    "Human completion time, usability or error rate",
+    "LLM/Alexa/Mem0/Zep performance",
+    "Real organizer demand",
+    "MCP transport or availability",
+    "Generalization beyond these fixtures"
+  ],
+  "runtime": "Python standard library; synthetic temporary SQLite for Mnemo; no model/provider/network calls.",
+  "source_hashes": {
+    "planner.py": "ab26d5d3e42dcedab21af84aabcf754898436e3792f2f23c64a6d97c5bdc3906",
+    "plan_receipts.py": "2c852bb3de662acc31090a0bad0aeb2cd0c76979c88e317afc4eb9847a974cf1",
+    "comparisons/deterministic_workshop.py": "6fa2733576bf2d091bf6b1335e0d2ef02bee11107bc7bc880baab8222ea85e9c"
+  }
+}
